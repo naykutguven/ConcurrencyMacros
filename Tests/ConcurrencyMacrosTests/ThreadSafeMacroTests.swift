@@ -60,19 +60,19 @@ struct ThreadSafeMacroTests {
         )
         let output = expanded.nonWhitespaceDescription
 
-        #expect(output.contains("privatelet_internalState:Mutex<_InternalState>"))
-        #expect(output.contains("privatestruct_InternalState:Sendable{varcount:Intvarname:String}"))
-        #expect(output.contains("privatefuncinLock<Result:Sendable>(_mutation:@Sendable(inout_InternalState)->Result)->Result{_internalState.mutate(mutation)}"))
+        #expect(output.contains("privatelet_state:Mutex<_State>"))
+        #expect(output.contains("privatestruct_State:Sendable{varcount:Intvarname:String}"))
+        #expect(output.contains("privatefuncinLock<Result:Sendable>(_mutation:@Sendable(inout_State)->Result)->Result{_state.mutate(mutation)}"))
 
-        #expect(output.contains("get{_internalState.value.count}"))
-        #expect(output.contains("set{_=_internalState.set(\\.count,to:newValue)}"))
-        #expect(output.contains("get{_internalState.value.name}"))
-        #expect(output.contains("set{_=_internalState.set(\\.name,to:newValue)}"))
+        #expect(output.contains("get{_state.value.count}"))
+        #expect(output.contains("set{_=_state.set(\\.count,to:newValue)}"))
+        #expect(output.contains("get{_state.value.name}"))
+        #expect(output.contains("set{_=_state.set(\\.name,to:newValue)}"))
 
         #expect(output.contains("var_count:Int"))
         #expect(output.contains(#"let_name:String="Seed""#))
         #expect(output.contains("_count=count"))
-        #expect(output.contains("self._internalState=Mutex<_InternalState>(_InternalState(count:_count,name:_name))"))
+        #expect(output.contains("self._state=Mutex<_State>(_State(count:_count,name:_name))"))
     }
 
     @Test("Generates initialized internal state for classes without initializers")
@@ -92,14 +92,14 @@ struct ThreadSafeMacroTests {
         #expect(expanded.count == 3)
         #expect(
             expanded[0].nonWhitespaceDescription
-                == #"privatelet_internalState=Mutex<_InternalState>(_InternalState(count:0,name:"Seed",nickname:nil))"#
+                == #"privatelet_state=Mutex<_State>(_State(count:0,name:"Seed",nickname:nil))"#
         )
-        #expect(expanded[1].nonWhitespaceDescription.contains("privatestruct_InternalState:Sendable"))
+        #expect(expanded[1].nonWhitespaceDescription.contains("privatestruct_State:Sendable"))
         #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
         #expect(expanded[1].nonWhitespaceDescription.contains("varname:String"))
         #expect(expanded[1].nonWhitespaceDescription.contains("varnickname:String?"))
         #expect(expanded[2].nonWhitespaceDescription.contains("privatefuncinLock<Result:Sendable>"))
-        #expect(expanded[2].nonWhitespaceDescription.contains("_internalState.mutate(mutation)"))
+        #expect(expanded[2].nonWhitespaceDescription.contains("_state.mutate(mutation)"))
     }
 
     @Test("Throws diagnostics error when class has no initializer and required property defaults")
@@ -142,9 +142,9 @@ struct ThreadSafeMacroTests {
         let expanded = try expandMembers(for: declaration)
 
         #expect(expanded.count == 3)
-        #expect(expanded[0].nonWhitespaceDescription == "privatelet_internalState:Mutex<_InternalState>")
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state:Mutex<_State>")
         #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
-        #expect(expanded[2].nonWhitespaceDescription.contains("_internalState.mutate(mutation)"))
+        #expect(expanded[2].nonWhitespaceDescription.contains("_state.mutate(mutation)"))
     }
 
     @Test("SendableDiagnostic exposes stable metadata")
@@ -172,8 +172,8 @@ struct ThreadSafeMacroTests {
         let expanded = try expandMembers(for: declaration)
 
         #expect(expanded.count == 3)
-        #expect(expanded[0].nonWhitespaceDescription == "privatelet_internalState=Mutex<_InternalState>(_InternalState())")
-        #expect(expanded[1].nonWhitespaceDescription == "privatestruct_InternalState:Sendable{}")
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=Mutex<_State>(_State())")
+        #expect(expanded[1].nonWhitespaceDescription == "privatestruct_State:Sendable{}")
         #expect(expanded[2].nonWhitespaceDescription.contains("privatefuncinLock<Result:Sendable>"))
     }
 

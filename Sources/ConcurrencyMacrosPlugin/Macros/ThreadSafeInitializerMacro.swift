@@ -11,7 +11,7 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
-/// Rewrites initializer bodies to stage assignments and initialize `_internalState` once values are ready.
+/// Rewrites initializer bodies to stage assignments and initialize `_state` once values are ready.
 public struct ThreadSafeInitializerMacro: BodyMacro {
     /// Rewrites the initializer to initialize the internal state with the stored properties.
     public static func expansion(
@@ -108,9 +108,9 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             return [CodeBlockItemSyntax(statement)]
         }
 
-        // Set _internalState once the required properties have been set
+        // Set _state once the required properties have been set
         let addedStatement = CodeBlockItemSyntax(
-            stringLiteral: "self._internalState = Mutex<_InternalState>(_InternalState(\(storedVariables.map { "\($0.key): _\($0.key)" }.joined(separator: ", "))))")
+            stringLiteral: "self._state = Mutex<_State>(_State(\(storedVariables.map { "\($0.key): _\($0.key)" }.joined(separator: ", "))))")
         statements.insert(addedStatement, at: lastVariableSetAt + 1)
 
         // Add variables to hold the properties while they are created

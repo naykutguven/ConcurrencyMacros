@@ -16,7 +16,7 @@ import SwiftSyntaxMacros
 private enum Constant {
     static let trackedMacroName = "ThreadSafeProperty"
     static let initializerMacroName = "ThreadSafeInitializer"
-    static let internalStateName = "_internalState"
+    static let stateName = "_state"
 }
 
 /// A macro that makes class properties thread-safe by using an atomic internal state.
@@ -35,7 +35,7 @@ public struct ThreadSafeMacro: MemberMacro {
 
         let hasInitializer = classDecl.memberBlock.members.contains(where: { $0.decl.as(InitializerDeclSyntax.self) != nil })
         if !hasInitializer {
-            // Generate and initialize _internalState property
+            // Generate and initialize _state property
             let variables = try storedVariables.map { name, _, defaultValue in
                 guard let defaultValue else {
                     throw DiagnosticsError(
@@ -44,27 +44,27 @@ public struct ThreadSafeMacro: MemberMacro {
                 }
                 return "\(name): \(defaultValue)"
             }
-            let decl = "private let \(Constant.internalStateName) = Mutex<_InternalState>(_InternalState(\(variables.joined(separator: ", "))))"
-            let internalStateProperty = DeclSyntax("""
+            let decl = "private let \(Constant.stateName) = Mutex<_State>(_State(\(variables.joined(separator: ", "))))"
+            let stateProperty = DeclSyntax("""
         \(raw: decl)
         """)
-            members.append(internalStateProperty)
+            members.append(stateProperty)
         } else {
-            // Generate _internalState property
-            let internalStateProperty = DeclSyntax("""
-        private let \(raw: Constant.internalStateName): Mutex<_InternalState>
+            // Generate _state property
+            let stateProperty = DeclSyntax("""
+        private let \(raw: Constant.stateName): Mutex<_State>
         """)
-            members.append(internalStateProperty)
+            members.append(stateProperty)
         }
 
-        // Generate _InternalState struct with the stored properties
+        // Generate _State struct with the stored properties
         var internalStateFields = ""
         for (name, type, _) in storedVariables {
             internalStateFields += "    var \(name): \(type)\n"
         }
 
         let internalStateStruct = DeclSyntax("""
-      private struct _InternalState: Sendable {
+      private struct _State: Sendable {
       \(raw: internalStateFields)}
       """)
           members.append(internalStateStruct)
@@ -72,8 +72,8 @@ public struct ThreadSafeMacro: MemberMacro {
         // Generate `inLock` function
         let mutateFunc = DeclSyntax("""
           @discardableResult
-          private func inLock<Result: Sendable>(_ mutation: @Sendable (inout _InternalState) -> Result) -> Result {
-              _internalState.mutate(mutation)
+          private func inLock<Result: Sendable>(_ mutation: @Sendable (inout _State) -> Result) -> Result {
+              _state.mutate(mutation)
           }
       """)
         members.append(mutateFunc)

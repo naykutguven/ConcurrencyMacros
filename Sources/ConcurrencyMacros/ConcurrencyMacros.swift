@@ -6,7 +6,7 @@
 //
 
 /// Expands on classes to synthesize a lock-backed internal state and lock helpers.
-@attached(member, names: named(_internalState), named(_InternalState), named(inLock))
+@attached(member, names: named(_state), named(_State), named(inLock))
 @attached(memberAttribute)
 public macro ThreadSafe() = #externalMacro(
     module: "ConcurrencyMacrosPlugin",

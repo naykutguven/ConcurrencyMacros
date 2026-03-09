@@ -24,8 +24,8 @@ struct ThreadSafePropertyMacroTests {
         let accessors = try expandAccessors(for: "var counter: Int")
 
         #expect(accessors.count == 2)
-        #expect(accessors[0].nonWhitespaceDescription == "get{_internalState.value.counter}")
-        #expect(accessors[1].nonWhitespaceDescription == "set{_=_internalState.set(\\.counter,to:newValue)}")
+        #expect(accessors[0].nonWhitespaceDescription == "get{_state.value.counter}")
+        #expect(accessors[1].nonWhitespaceDescription == "set{_=_state.set(\\.counter,to:newValue)}")
     }
 
     @Test("Uses first binding in a multi-binding declaration")
@@ -33,8 +33,8 @@ struct ThreadSafePropertyMacroTests {
         let accessors = try expandAccessors(for: "var first: Int, second: Int")
 
         #expect(accessors.count == 2)
-        #expect(accessors[0].nonWhitespaceDescription == "get{_internalState.value.first}")
-        #expect(accessors[1].nonWhitespaceDescription == "set{_=_internalState.set(\\.first,to:newValue)}")
+        #expect(accessors[0].nonWhitespaceDescription == "get{_state.value.first}")
+        #expect(accessors[1].nonWhitespaceDescription == "set{_=_state.set(\\.first,to:newValue)}")
     }
 
     @Test("Returns no accessors for non-variable declarations")

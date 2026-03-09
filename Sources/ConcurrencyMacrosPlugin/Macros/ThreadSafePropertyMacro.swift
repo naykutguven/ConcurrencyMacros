@@ -11,7 +11,7 @@ import SwiftSyntax
 /// Expands a mutable stored property into lock-backed `get` and `set` accessors.
 public struct ThreadSafePropertyMacro: AccessorMacro {
     private enum Constant {
-        static let internalStateName = "_internalState"
+        static let stateName = "_state"
     }
 
     /// Produces accessor declarations that route reads and writes through the internal mutex state.
@@ -28,8 +28,8 @@ public struct ThreadSafePropertyMacro: AccessorMacro {
         }
 
         return [
-            AccessorDeclSyntax(stringLiteral: "get { \(Constant.internalStateName).value.\(identifier) }"),
-            AccessorDeclSyntax(stringLiteral: "set { _ = \(Constant.internalStateName).set(\\.\(identifier), to: newValue) }"),
+            AccessorDeclSyntax(stringLiteral: "get { \(Constant.stateName).value.\(identifier) }"),
+            AccessorDeclSyntax(stringLiteral: "set { _ = \(Constant.stateName).set(\\.\(identifier), to: newValue) }"),
         ]
     }
 }
