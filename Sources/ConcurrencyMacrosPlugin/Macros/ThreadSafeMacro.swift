@@ -84,6 +84,7 @@ public struct ThreadSafeMacro: MemberMacro {
 
 // MARK: MemberAttributeMacro
 
+/// Adds member attributes required by `@ThreadSafe` synthesized behavior.
 extension ThreadSafeMacro: MemberAttributeMacro {
     /// Adds `@ThreadSafeProperty` and `@ThreadSafeInitializer` attributes to the class members.
     public static func expansion(
@@ -156,13 +157,17 @@ extension ThreadSafeMacro: MemberAttributeMacro {
 
 // MARK: - SendableDiagnostic
 
+/// Diagnostic message emitted when thread-safe macro expansion constraints are violated.
 struct SendableDiagnostic: DiagnosticMessage {
+    /// Human-readable diagnostic text.
     let message: String
 
+    /// Stable diagnostic identifier for tooling and assertions.
     var diagnosticID: MessageID {
         MessageID(domain: "ThreadSafeMacro", id: "propertyReplacement")
     }
 
+    /// Severity used for emitted diagnostics.
     var severity: DiagnosticSeverity {
         .error
     }
@@ -170,7 +175,13 @@ struct SendableDiagnostic: DiagnosticMessage {
 
 // MARK: - DiagnosticsError Extension
 
+/// Convenience constructors for emitting diagnostics from macro helpers.
 extension DiagnosticsError {
+    /// Creates a diagnostics error containing one error-level message anchored to `syntax`.
+    ///
+    /// - Parameters:
+    ///   - syntax: The syntax node associated with the diagnostic.
+    ///   - message: The diagnostic message text.
     init(syntax: some SyntaxProtocol, message: String) {
         self.init(diagnostics: [
             Diagnostic(node: Syntax(syntax), message: SendableDiagnostic(message: message)),

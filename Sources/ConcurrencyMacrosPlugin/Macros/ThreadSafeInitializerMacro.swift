@@ -11,6 +11,7 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
+/// Rewrites initializer bodies to stage assignments and initialize `_internalState` once values are ready.
 public struct ThreadSafeInitializerMacro: BodyMacro {
     /// Rewrites the initializer to initialize the internal state with the stored properties.
     public static func expansion(

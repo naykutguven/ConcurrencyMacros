@@ -9,26 +9,38 @@ import Foundation
 import os.lock
 
 @dynamicMemberLookup
+/// Wraps a `Sendable` value behind `OSAllocatedUnfairLock` for synchronized access and mutation.
 public final class Mutex<Value: Sendable>: Sendable {
     private let lock: OSAllocatedUnfairLock<Value>
 
+    /// Creates a mutex with an initial value.
+    ///
+    /// - Parameter value: The initial protected value.
     public init(_ value: Value) {
         lock = .init(initialState: value)
     }
 
+    /// Returns a snapshot of the protected value captured under the lock.
     public var value: Value {
         lock.withLock { $0 }
     }
 
     @discardableResult
+    /// Mutates the protected value while holding the lock.
+    ///
+    /// - Parameter mutation: A closure that receives the inout protected value.
+    /// - Returns: The result produced by `mutation`.
     public func mutate<Result: Sendable>(
         _ mutation: @Sendable (inout Value) throws -> Result
     ) rethrows -> Result {
         try lock.withLock { try mutation(&$0) }
     }
 
-    /// Set to the new value and return the old value.
     @discardableResult
+    /// Replaces the protected value and returns the previous value.
+    ///
+    /// - Parameter newValue: The new value to store.
+    /// - Returns: The value stored before replacement.
     public func set(_ newValue: Value) -> Value {
         lock.withLock { value in
             let oldValue = value
@@ -37,8 +49,13 @@ public final class Mutex<Value: Sendable>: Sendable {
         }
     }
 
-    /// Set property to the new value and return the old value.
     @discardableResult
+    /// Updates one writable member of the protected value and returns its previous value.
+    ///
+    /// - Parameters:
+    ///   - keyPath: A writable key path identifying the member to update.
+    ///   - newValue: The replacement member value.
+    /// - Returns: The member value before replacement.
     public func set<T: Sendable>(_ keyPath: WritableKeyPath<Value, T>, to newValue: T) -> T {
         lock.withLock { value in
             let oldValue = value[keyPath: keyPath]
@@ -47,11 +64,15 @@ public final class Mutex<Value: Sendable>: Sendable {
         }
     }
 
+    /// Provides mutable dynamic-member access for writable key paths.
+    ///
+    /// Reads return a locked snapshot, and writes are performed under the lock.
     public subscript<T: Sendable>(dynamicMember keyPath: WritableKeyPath<Value, T>) -> T {
         get { value[keyPath: keyPath] }
         set { lock.withLock { value in value[keyPath: keyPath] = newValue } }
     }
 
+    /// Provides read-only dynamic-member access for immutable key paths.
     public subscript<T>(dynamicMember keyPath: KeyPath<Value, T>) -> T {
         value[keyPath: keyPath]
     }
@@ -59,4 +80,5 @@ public final class Mutex<Value: Sendable>: Sendable {
 
 // MARK: - KeyPath + @unchecked @retroactive Sendable
 
+/// Marks `KeyPath` values as sendable when both root and value types are sendable.
 extension KeyPath: @unchecked @retroactive Sendable where Root: Sendable, Value: Sendable { }

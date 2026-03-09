@@ -336,6 +336,7 @@ struct ThreadSafeMacroTests {
 }
 
 private extension ThreadSafeMacroTests {
+    /// Macro set used by end-to-end expansion tests.
     static let endToEndMacros: [String: Macro.Type] = [
         "ThreadSafe": ThreadSafeMacro.self,
         "ThreadSafeProperty": ThreadSafePropertyMacro.self,
@@ -346,6 +347,10 @@ private extension ThreadSafeMacroTests {
 // MARK: - Private Helpers
 
 private extension ThreadSafeMacroTests {
+    /// Expands members synthesized by `ThreadSafeMacro` for a declaration.
+    ///
+    /// - Parameter declaration: Declaration to expand.
+    /// - Returns: Expanded member declarations.
     func expandMembers(for declaration: some DeclSyntaxProtocol) throws -> [DeclSyntax] {
         try ThreadSafeMacro.expansion(
             of: threadSafeAttribute,
@@ -355,6 +360,12 @@ private extension ThreadSafeMacroTests {
         )
     }
 
+    /// Expands member attributes synthesized by `ThreadSafeMacro`.
+    ///
+    /// - Parameters:
+    ///   - group: The declaration group the attribute is attached to.
+    ///   - member: The member declaration being inspected.
+    /// - Returns: Synthesized attributes for the member.
     func expandAttributes(
         attachedTo group: some DeclGroupSyntax,
         member: some DeclSyntaxProtocol
@@ -367,6 +378,10 @@ private extension ThreadSafeMacroTests {
         )
     }
 
+    /// Parses and returns the first declaration from source text.
+    ///
+    /// - Parameter source: Source that begins with a declaration.
+    /// - Returns: The first declaration in the parsed source file.
     func firstDeclaration(in source: String) throws -> DeclSyntax {
         let sourceFile = Parser.parse(source: source)
         let statement = try #require(
@@ -379,6 +394,10 @@ private extension ThreadSafeMacroTests {
         )
     }
 
+    /// Parses and returns a class declaration from source text.
+    ///
+    /// - Parameter source: Source expected to begin with a class declaration.
+    /// - Returns: Parsed `ClassDeclSyntax`.
     func classDeclaration(in source: String) throws -> ClassDeclSyntax {
         let declaration = try firstDeclaration(in: source)
         return try #require(
@@ -387,6 +406,10 @@ private extension ThreadSafeMacroTests {
         )
     }
 
+    /// Parses and returns a struct declaration from source text.
+    ///
+    /// - Parameter source: Source expected to begin with a struct declaration.
+    /// - Returns: Parsed `StructDeclSyntax`.
     func structDeclaration(in source: String) throws -> StructDeclSyntax {
         let declaration = try firstDeclaration(in: source)
         return try #require(
@@ -395,6 +418,10 @@ private extension ThreadSafeMacroTests {
         )
     }
 
+    /// Extracts the single argument expression text from an attribute for assertion use.
+    ///
+    /// - Parameter attribute: Attribute whose first argument should be read.
+    /// - Returns: Normalized argument expression description.
     func initializerArgumentExpression(in attribute: AttributeSyntax) throws -> String {
         try attribute
             .singleArgumentExpressionDescription()

@@ -8,7 +8,9 @@
 import Foundation
 import SwiftSyntax
 
+/// Variable declaration helpers used by macro expansion.
 extension VariableDeclSyntax {
+    /// Indicates whether this declaration is a single mutable stored property eligible for rewriting.
     var isMutable: Bool {
         guard
             bindingSpecifier.text == "var",

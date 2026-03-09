@@ -60,6 +60,10 @@ struct ThreadSafePropertyMacroTests {
 // MARK: - Private Helpers
 
 private extension ThreadSafePropertyMacroTests {
+    /// Expands property accessors for a declaration snippet.
+    ///
+    /// - Parameter declarationSource: A declaration source string to parse.
+    /// - Returns: Accessors synthesized by `ThreadSafePropertyMacro`.
     func expandAccessors(for declarationSource: String) throws -> [AccessorDeclSyntax] {
         let declaration = try firstDeclaration(in: declarationSource)
 
@@ -70,6 +74,10 @@ private extension ThreadSafePropertyMacroTests {
         )
     }
 
+    /// Parses the first declaration from a Swift source snippet.
+    ///
+    /// - Parameter source: Source containing at least one declaration statement.
+    /// - Returns: The first parsed declaration.
     func firstDeclaration(in source: String) throws -> DeclSyntax {
         let sourceFile = Parser.parse(source: source)
         let statement = try #require(

@@ -192,6 +192,12 @@ struct ThreadSafeInitializerMacroTests {
 // MARK: - Private Helpers
 
 private extension ThreadSafeInitializerMacroTests {
+    /// Expands a declaration body for a parsed `@ThreadSafeInitializer` attribute.
+    ///
+    /// - Parameters:
+    ///   - attributeSource: Source text that parses to an attribute.
+    ///   - declaration: Declaration whose body should be rewritten.
+    /// - Returns: Expanded code block items.
     func expandBody<D: DeclSyntaxProtocol & WithOptionalCodeBlockSyntax>(
         attributeSource: String,
         for declaration: D
@@ -203,6 +209,10 @@ private extension ThreadSafeInitializerMacroTests {
         )
     }
 
+    /// Parses an `AttributeSyntax` node from source text.
+    ///
+    /// - Parameter source: Attribute source text.
+    /// - Returns: Parsed attribute syntax.
     func attribute(from source: String) throws -> AttributeSyntax {
         let parsedFile = Parser.parse(
             source: """
@@ -220,6 +230,10 @@ private extension ThreadSafeInitializerMacroTests {
         )
     }
 
+    /// Returns the first initializer declared in a struct snippet.
+    ///
+    /// - Parameter source: Source that starts with a struct declaration.
+    /// - Returns: The first initializer in the struct body.
     func initializerInStruct(_ source: String) throws -> InitializerDeclSyntax {
         let parsedFile = Parser.parse(source: source)
         let structDeclaration = try #require(
@@ -232,6 +246,10 @@ private extension ThreadSafeInitializerMacroTests {
         )
     }
 
+    /// Returns the first initializer requirement declared in a protocol snippet.
+    ///
+    /// - Parameter source: Source that starts with a protocol declaration.
+    /// - Returns: The first initializer requirement in the protocol body.
     func initializerRequirementInProtocol(_ source: String) throws -> InitializerDeclSyntax {
         let parsedFile = Parser.parse(source: source)
         let protocolDeclaration = try #require(

@@ -13,6 +13,7 @@ import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 import RegexBuilder
 
+/// Utilities for extracting macro-relevant stored-property metadata from class declarations.
 extension ClassDeclSyntax {
     private static var trailingCallSuffixRegex: Regex<Substring> {
         Regex {

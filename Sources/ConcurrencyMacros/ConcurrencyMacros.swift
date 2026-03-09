@@ -5,6 +5,7 @@
 //  Created by Aykut Güven on 09.03.26.
 //
 
+/// Expands on classes to synthesize a lock-backed internal state and lock helpers.
 @attached(member, names: named(_internalState), named(_InternalState), named(inLock))
 @attached(memberAttribute)
 public macro ThreadSafe() = #externalMacro(
@@ -12,12 +13,14 @@ public macro ThreadSafe() = #externalMacro(
     type: "ThreadSafeMacro"
 )
 
+/// Rewrites initializer bodies so stored-property assignments populate synthesized lock state.
 @attached(body)
 public macro ThreadSafeInitializer(_ params: [String: Any]) = #externalMacro(
   module: "ConcurrencyMacrosPlugin",
   type: "ThreadSafeInitializerMacro"
 )
 
+/// Replaces mutable stored properties with lock-backed accessor implementations.
 @attached(accessor)
 public macro ThreadSafeProperty() = #externalMacro(
     module: "ConcurrencyMacrosPlugin",

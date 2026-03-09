@@ -8,7 +8,9 @@
 import Foundation
 import SwiftSyntax
 
+/// Type helpers used to synthesize fallback default values during macro expansion.
 extension TypeSyntax {
+    /// Returns a default literal for optional types and `nil` for non-optionals.
     var defaultValueForOptional: String? {
         guard self.as(OptionalTypeSyntax.self) != nil else {
             return nil
