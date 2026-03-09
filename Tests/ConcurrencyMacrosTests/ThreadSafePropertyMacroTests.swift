@@ -1,0 +1,82 @@
+import SwiftParser
+import SwiftSyntax
+import SwiftSyntaxMacroExpansion
+import Testing
+@testable import ConcurrencyMacrosPlugin
+
+@Suite("ThreadSafePropertyMacro")
+struct ThreadSafePropertyMacroTests {
+    private var threadSafeAttribute: AttributeSyntax {
+        AttributeSyntax(
+            attributeName: IdentifierTypeSyntax(name: .identifier("ThreadSafeProperty"))
+        )
+    }
+
+    @Test("Expands accessor pair for identifier pattern")
+    func expandsAccessorPair() throws {
+        let accessors = try expandAccessors(for: "var counter: Int")
+
+        #expect(accessors.count == 2)
+        #expect(normalized(accessors[0]) == "get{_internalState.value.counter}")
+        #expect(normalized(accessors[1]) == "set{_=_internalState.set(\\.counter,to:newValue)}")
+    }
+
+    @Test("Uses first binding in a multi-binding declaration")
+    func usesFirstBinding() throws {
+        let accessors = try expandAccessors(for: "var first: Int, second: Int")
+
+        #expect(accessors.count == 2)
+        #expect(normalized(accessors[0]) == "get{_internalState.value.first}")
+        #expect(normalized(accessors[1]) == "set{_=_internalState.set(\\.first,to:newValue)}")
+    }
+
+    @Test("Returns no accessors for non-variable declarations")
+    func returnsNoAccessorsForNonVariableDeclaration() throws {
+        let declaration = try firstDeclaration(in: "func performWork() {}")
+        let accessors = try ThreadSafePropertyMacro.expansion(
+            of: threadSafeAttribute,
+            providingAccessorsOf: declaration,
+            in: BasicMacroExpansionContext()
+        )
+
+        #expect(accessors.isEmpty)
+    }
+
+    @Test("Returns no accessors for non-identifier patterns")
+    func returnsNoAccessorsForNonIdentifierPattern() throws {
+        let accessors = try expandAccessors(for: "var (left, right): (Int, Int)")
+
+        #expect(accessors.isEmpty)
+    }
+}
+
+// MARK: - Private Helpers
+
+private extension ThreadSafePropertyMacroTests {
+    func expandAccessors(for declarationSource: String) throws -> [AccessorDeclSyntax] {
+        let declaration = try firstDeclaration(in: declarationSource)
+
+        return try ThreadSafePropertyMacro.expansion(
+            of: threadSafeAttribute,
+            providingAccessorsOf: declaration,
+            in: BasicMacroExpansionContext()
+        )
+    }
+
+    func firstDeclaration(in source: String) throws -> DeclSyntax {
+        let sourceFile = Parser.parse(source: source)
+        let statement = try #require(
+            sourceFile.statements.first,
+            "Expected source to contain one statement: \(source)"
+        )
+        let declaration = try #require(
+            statement.item.as(DeclSyntax.self),
+            "Expected first statement to be a declaration: \(source)"
+        )
+        return declaration
+    }
+
+    func normalized(_ accessor: AccessorDeclSyntax) -> String {
+        accessor.description.filter { !$0.isWhitespace }
+    }
+}

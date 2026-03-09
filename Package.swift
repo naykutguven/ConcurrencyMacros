@@ -39,6 +39,7 @@ let package = Package(
             dependencies: [
                 "ConcurrencyMacros",
                 "ConcurrencyMacrosPlugin",
+                .product(name: "SwiftParser", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
             ]
         ),
