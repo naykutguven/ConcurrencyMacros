@@ -71,7 +71,10 @@ struct ThreadSafeInitializerMacroTests {
         let originalBody = try #require(declaration.body)
         let originalStatements = originalBody.statements.compactMap { CodeBlockItemSyntax($0) }
 
-        #expect(normalized(expanded) == normalized(originalStatements))
+        #expect(
+            expanded.map(\.nonWhitespaceDescription)
+                == originalStatements.map(\.nonWhitespaceDescription)
+        )
     }
 
     @Test("Rewrites assignments and initializes internal state after the last required assignment")
@@ -95,7 +98,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         #expect(
-            normalized(expanded) == [
+            expanded.map(\.nonWhitespaceDescription) == [
                 "var_first:String",
                 "var_second:Int",
                 "var_optionalThird:String?=nil",
@@ -126,7 +129,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         #expect(
-            normalized(expanded) == [
+            expanded.map(\.nonWhitespaceDescription) == [
                 "let_id:Int",
                 #"let_name:String="Anonymous""#,
                 "self._internalState=Mutex<_InternalState>(_InternalState(id:_id,name:_name))",
@@ -153,7 +156,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         #expect(
-            normalized(expanded) == [
+            expanded.map(\.nonWhitespaceDescription) == [
                 "self._internalState=Mutex<_InternalState>(_InternalState())",
                 "print(value)",
             ]
@@ -178,7 +181,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         #expect(
-            normalized(expanded) == [
+            expanded.map(\.nonWhitespaceDescription) == [
                 "self._internalState=Mutex<_InternalState>(_InternalState())",
                 "self.count=count",
             ]
@@ -239,13 +242,5 @@ private extension ThreadSafeInitializerMacroTests {
             protocolDeclaration.memberBlock.members.compactMap { $0.decl.as(InitializerDeclSyntax.self) }.first,
             "Expected protocol to contain an initializer requirement: \(source)"
         )
-    }
-
-    func normalized(_ statements: [CodeBlockItemSyntax]) -> [String] {
-        statements.map(normalized(_:))
-    }
-
-    func normalized(_ statement: CodeBlockItemSyntax) -> String {
-        statement.description.filter { !$0.isWhitespace }
     }
 }

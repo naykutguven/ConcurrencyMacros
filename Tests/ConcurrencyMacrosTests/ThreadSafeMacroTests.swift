@@ -9,6 +9,7 @@ import SwiftDiagnostics
 import SwiftParser
 import SwiftSyntax
 import SwiftSyntaxMacroExpansion
+import SwiftSyntaxMacros
 import Testing
 @testable import ConcurrencyMacrosPlugin
 
@@ -35,6 +36,45 @@ struct ThreadSafeMacroTests {
         #expect(expanded.isEmpty)
     }
 
+    @Test("Expands ThreadSafe end-to-end with property and initializer rewriting")
+    func expandsThreadSafeEndToEnd() {
+        let sourceFile = Parser.parse(
+            source: """
+            @ThreadSafe
+            class Example {
+                var count: Int
+                var name = "Seed"
+
+                init(count: Int) {
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let context = BasicMacroExpansionContext()
+        let expanded = sourceFile.expand(
+            macros: Self.endToEndMacros,
+            contextGenerator: { _ in context },
+            indentationWidth: .spaces(4)
+        )
+        let output = expanded.nonWhitespaceDescription
+
+        #expect(output.contains("privatelet_internalState:Mutex<_InternalState>"))
+        #expect(output.contains("privatestruct_InternalState:Sendable{varcount:Intvarname:String}"))
+        #expect(output.contains("privatefuncinLock<Result:Sendable>(_mutation:@Sendable(inout_InternalState)->Result)->Result{_internalState.mutate(mutation)}"))
+
+        #expect(output.contains("get{_internalState.value.count}"))
+        #expect(output.contains("set{_=_internalState.set(\\.count,to:newValue)}"))
+        #expect(output.contains("get{_internalState.value.name}"))
+        #expect(output.contains("set{_=_internalState.set(\\.name,to:newValue)}"))
+
+        #expect(output.contains("var_count:Int"))
+        #expect(output.contains(#"let_name:String="Seed""#))
+        #expect(output.contains("_count=count"))
+        #expect(output.contains("self._internalState=Mutex<_InternalState>(_InternalState(count:_count,name:_name))"))
+    }
+
     @Test("Generates initialized internal state for classes without initializers")
     func generatesInitializedInternalStateWithoutInitializer() throws {
         let declaration = try classDeclaration(
@@ -51,15 +91,15 @@ struct ThreadSafeMacroTests {
 
         #expect(expanded.count == 3)
         #expect(
-            normalized(expanded[0])
+            expanded[0].nonWhitespaceDescription
                 == #"privatelet_internalState=Mutex<_InternalState>(_InternalState(count:0,name:"Seed",nickname:nil))"#
         )
-        #expect(normalized(expanded[1]).contains("privatestruct_InternalState:Sendable"))
-        #expect(normalized(expanded[1]).contains("varcount:Int"))
-        #expect(normalized(expanded[1]).contains("varname:String"))
-        #expect(normalized(expanded[1]).contains("varnickname:String?"))
-        #expect(normalized(expanded[2]).contains("privatefuncinLock<Result:Sendable>"))
-        #expect(normalized(expanded[2]).contains("_internalState.mutate(mutation)"))
+        #expect(expanded[1].nonWhitespaceDescription.contains("privatestruct_InternalState:Sendable"))
+        #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
+        #expect(expanded[1].nonWhitespaceDescription.contains("varname:String"))
+        #expect(expanded[1].nonWhitespaceDescription.contains("varnickname:String?"))
+        #expect(expanded[2].nonWhitespaceDescription.contains("privatefuncinLock<Result:Sendable>"))
+        #expect(expanded[2].nonWhitespaceDescription.contains("_internalState.mutate(mutation)"))
     }
 
     @Test("Throws diagnostics error when class has no initializer and required property defaults")
@@ -102,9 +142,9 @@ struct ThreadSafeMacroTests {
         let expanded = try expandMembers(for: declaration)
 
         #expect(expanded.count == 3)
-        #expect(normalized(expanded[0]) == "privatelet_internalState:Mutex<_InternalState>")
-        #expect(normalized(expanded[1]).contains("varcount:Int"))
-        #expect(normalized(expanded[2]).contains("_internalState.mutate(mutation)"))
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_internalState:Mutex<_InternalState>")
+        #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
+        #expect(expanded[2].nonWhitespaceDescription.contains("_internalState.mutate(mutation)"))
     }
 
     @Test("SendableDiagnostic exposes stable metadata")
@@ -132,9 +172,9 @@ struct ThreadSafeMacroTests {
         let expanded = try expandMembers(for: declaration)
 
         #expect(expanded.count == 3)
-        #expect(normalized(expanded[0]) == "privatelet_internalState=Mutex<_InternalState>(_InternalState())")
-        #expect(normalized(expanded[1]) == "privatestruct_InternalState:Sendable{}")
-        #expect(normalized(expanded[2]).contains("privatefuncinLock<Result:Sendable>"))
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_internalState=Mutex<_InternalState>(_InternalState())")
+        #expect(expanded[1].nonWhitespaceDescription == "privatestruct_InternalState:Sendable{}")
+        #expect(expanded[2].nonWhitespaceDescription.contains("privatefuncinLock<Result:Sendable>"))
     }
 
     @Test("Adds ThreadSafeProperty attribute to mutable stored properties")
@@ -146,12 +186,12 @@ struct ThreadSafeMacroTests {
             }
             """
         )
-        let property = try member(in: declaration, at: 0)
+        let property = try declaration.memberDecl(at: 0)
 
         let expanded = try expandAttributes(attachedTo: declaration, member: property)
 
         #expect(expanded.count == 1)
-        #expect(attributeName(expanded[0]) == "ThreadSafeProperty")
+        #expect(expanded[0].identifierTypeName == "ThreadSafeProperty")
     }
 
     @Test("Does not add ThreadSafeProperty attribute to immutable properties")
@@ -163,7 +203,7 @@ struct ThreadSafeMacroTests {
             }
             """
         )
-        let property = try member(in: declaration, at: 0)
+        let property = try declaration.memberDecl(at: 0)
 
         let expanded = try expandAttributes(attachedTo: declaration, member: property)
 
@@ -179,7 +219,7 @@ struct ThreadSafeMacroTests {
             }
             """
         )
-        let property = try member(in: declaration, at: 0)
+        let property = try declaration.memberDecl(at: 0)
 
         let expanded = try expandAttributes(attachedTo: declaration, member: property)
 
@@ -201,13 +241,13 @@ struct ThreadSafeMacroTests {
             }
             """
         )
-        let initializer = try member(in: declaration, at: 3)
+        let initializer = try declaration.memberDecl(at: 3)
 
         let expanded = try expandAttributes(attachedTo: declaration, member: initializer)
 
         #expect(expanded.count == 1)
         let attribute = try #require(expanded.first)
-        #expect(attributeName(attribute) == "ThreadSafeInitializer")
+        #expect(attribute.identifierTypeName == "ThreadSafeInitializer")
 
         let argumentExpression = try initializerArgumentExpression(in: attribute)
         #expect(argumentExpression.contains(#""required":TypeErased<Int>()"#))
@@ -228,13 +268,13 @@ struct ThreadSafeMacroTests {
             }
             """
         )
-        let initializer = try member(in: declaration, at: 1)
+        let initializer = try declaration.memberDecl(at: 1)
 
         let expanded = try expandAttributes(attachedTo: declaration, member: initializer)
 
         #expect(expanded.count == 1)
         let attribute = try #require(expanded.first)
-        #expect(attributeName(attribute) == "ThreadSafeInitializer")
+        #expect(attribute.identifierTypeName == "ThreadSafeInitializer")
         #expect(try initializerArgumentExpression(in: attribute).contains("[:"))
     }
 
@@ -253,7 +293,7 @@ struct ThreadSafeMacroTests {
             }
             """
         )
-        let convenienceInitializer = try member(in: declaration, at: 2)
+        let convenienceInitializer = try declaration.memberDecl(at: 2)
 
         let expanded = try expandAttributes(attachedTo: declaration, member: convenienceInitializer)
 
@@ -271,7 +311,7 @@ struct ThreadSafeMacroTests {
             }
             """
         )
-        let initializer = try member(in: declaration, at: 0)
+        let initializer = try declaration.memberDecl(at: 0)
 
         let expanded = try expandAttributes(attachedTo: declaration, member: initializer)
 
@@ -287,12 +327,20 @@ struct ThreadSafeMacroTests {
             }
             """
         )
-        let function = try member(in: declaration, at: 0)
+        let function = try declaration.memberDecl(at: 0)
 
         let expanded = try expandAttributes(attachedTo: declaration, member: function)
 
         #expect(expanded.isEmpty)
     }
+}
+
+private extension ThreadSafeMacroTests {
+    static let endToEndMacros: [String: Macro.Type] = [
+        "ThreadSafe": ThreadSafeMacro.self,
+        "ThreadSafeProperty": ThreadSafePropertyMacro.self,
+        "ThreadSafeInitializer": ThreadSafeInitializerMacro.self,
+    ]
 }
 
 // MARK: - Private Helpers
@@ -347,31 +395,9 @@ private extension ThreadSafeMacroTests {
         )
     }
 
-    func member(in declaration: some DeclGroupSyntax, at index: Int) throws -> DeclSyntax {
-        let memberDecl = try #require(
-            declaration.memberBlock.members.dropFirst(index).first?.decl,
-            "Expected declaration to contain a member at index \(index): \(declaration)"
-        )
-        return DeclSyntax(memberDecl)
-    }
-
-    func attributeName(_ attribute: AttributeSyntax) -> String? {
-        attribute.attributeName.as(IdentifierTypeSyntax.self)?.name.text
-    }
-
     func initializerArgumentExpression(in attribute: AttributeSyntax) throws -> String {
-        let arguments = try #require(
-            attribute.arguments?.as(LabeledExprListSyntax.self),
-            "Expected initializer attribute to have one argument"
-        )
-        let expression = try #require(
-            arguments.first?.expression,
-            "Expected initializer attribute to include one argument expression"
-        )
-        return normalized(expression).replacingOccurrences(of: "\\", with: "")
-    }
-
-    func normalized(_ syntax: some SyntaxProtocol) -> String {
-        syntax.description.filter { !$0.isWhitespace }
+        try attribute
+            .singleArgumentExpressionDescription()
+            .replacingOccurrences(of: "\\", with: "")
     }
 }
