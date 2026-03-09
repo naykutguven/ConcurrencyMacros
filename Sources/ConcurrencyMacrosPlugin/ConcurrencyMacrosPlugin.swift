@@ -11,6 +11,7 @@ import SwiftSyntaxMacros
 @main
 struct ConcurrencyMacrosPlugin: CompilerPlugin {
     let providingMacros: [Macro.Type] = [
+        ThreadSafeMacro.self,
         ThreadSafeInitializerMacro.self,
         ThreadSafePropertyMacro.self
     ]
