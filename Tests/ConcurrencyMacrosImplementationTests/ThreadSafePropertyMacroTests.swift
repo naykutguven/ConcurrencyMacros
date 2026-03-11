@@ -9,7 +9,7 @@ import SwiftParser
 import SwiftSyntax
 import SwiftSyntaxMacroExpansion
 import Testing
-@testable import ConcurrencyMacrosPlugin
+@testable import ConcurrencyMacrosImplementation
 
 @Suite("ThreadSafePropertyMacro")
 struct ThreadSafePropertyMacroTests {

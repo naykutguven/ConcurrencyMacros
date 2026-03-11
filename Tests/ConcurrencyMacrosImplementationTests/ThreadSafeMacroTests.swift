@@ -11,7 +11,7 @@ import SwiftSyntax
 import SwiftSyntaxMacroExpansion
 import SwiftSyntaxMacros
 import Testing
-@testable import ConcurrencyMacrosPlugin
+@testable import ConcurrencyMacrosImplementation
 
 @Suite("ThreadSafeMacro")
 struct ThreadSafeMacroTests {
