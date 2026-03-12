@@ -20,6 +20,18 @@ struct ConcurrencyMacrosTests {
         }
     }
 
+    private actor Collector {
+        private var values: [Int] = []
+
+        func append(_ value: Int) {
+            values.append(value)
+        }
+
+        func count() -> Int {
+            values.count
+        }
+    }
+
     @Test("ThreadSafe compiles with a single import")
     func threadSafeCompilesWithSingleImport() {
         let counter = Counter(count: 1)
@@ -65,6 +77,68 @@ struct ConcurrencyMacrosTests {
             #expect(error == .timedOut(after: timeout))
         } catch {
             Issue.record("Unexpected error type: \(error)")
+        }
+    }
+
+    @Test("concurrentMap compiles with single import and non-throwing transform")
+    func concurrentMapCompilesWithSingleImport() async {
+        let values = await #concurrentMap([1, 2, 3], limit: 2) { value in
+            value * 2
+        }
+
+        #expect(values == [2, 4, 6])
+    }
+
+    @Test("concurrentMap supports throwing transform form")
+    func concurrentMapSupportsThrowingTransformForm() async throws {
+        let values = try await #concurrentMap([1, 2, 3], limit: 2) { value in
+            try await Task.sleep(for: .milliseconds(2))
+            return value * 3
+        }
+
+        #expect(values == [3, 6, 9])
+    }
+
+    @Test("concurrentCompactMap compiles with single import")
+    func concurrentCompactMapCompilesWithSingleImport() async {
+        let values = await #concurrentCompactMap([1, 2, 3, 4], limit: 2) { value in
+            value.isMultiple(of: 2) ? value : nil
+        }
+
+        #expect(values == [2, 4])
+    }
+
+    @Test("concurrentFlatMap compiles with single import and sequence transform output")
+    func concurrentFlatMapCompilesWithSingleImport() async {
+        let values = await #concurrentFlatMap([1, 2], limit: 2) { value in
+            value..<(value + 2)
+        }
+
+        #expect(values == [1, 2, 2, 3])
+    }
+
+    @Test("concurrentForEach compiles with single import")
+    func concurrentForEachCompilesWithSingleImport() async {
+        let collector = Collector()
+
+        await #concurrentForEach([10, 20, 30], limit: 2) { value in
+            await collector.append(value)
+        }
+
+        #expect(await collector.count() == 3)
+    }
+
+    @Test("ConcurrencyLimit alias is available with single import")
+    func concurrencyLimitAliasIsAvailableWithSingleImport() {
+        let fixed: ConcurrencyLimit = 4
+        #expect(fixed.resolvedValue == 4)
+
+        switch ConcurrencyLimit.default {
+        case .default:
+            // Expected.
+            break
+        case .fixed:
+            Issue.record("Expected default limit to be default case")
         }
     }
 }

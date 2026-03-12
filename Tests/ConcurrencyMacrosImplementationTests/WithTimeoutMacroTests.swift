@@ -6,8 +6,6 @@
 //
 
 import SwiftDiagnostics
-import SwiftParser
-import SwiftSyntax
 import SwiftSyntaxMacroExpansion
 import Testing
 @testable import ConcurrencyMacrosImplementation
@@ -16,7 +14,7 @@ import Testing
 struct WithTimeoutMacroTests {
     @Test("Expands trailing-closure invocation to runtime helper call")
     func expandsTrailingClosureInvocation() throws {
-        let macroExpression = try parseMacroExpression(
+        let macroExpression = try TestSupport.parseMacroExpression(
             """
             #withTimeout(.seconds(3)) {
                 try await api.fetchProfile(id: userID)
@@ -37,7 +35,7 @@ struct WithTimeoutMacroTests {
 
     @Test("Expands operation-argument invocation to runtime helper call")
     func expandsOperationArgumentInvocation() throws {
-        let macroExpression = try parseMacroExpression(
+        let macroExpression = try TestSupport.parseMacroExpression(
             """
             #withTimeout(.seconds(3), operation: {
                 try await api.fetchProfile(id: userID)
@@ -58,7 +56,7 @@ struct WithTimeoutMacroTests {
 
     @Test("Throws diagnostic when duration argument is missing")
     func throwsDiagnosticWhenDurationArgumentIsMissing() throws {
-        let macroExpression = try parseMacroExpression(
+        let macroExpression = try TestSupport.parseMacroExpression(
             """
             #withTimeout {
                 42
@@ -66,16 +64,22 @@ struct WithTimeoutMacroTests {
             """
         )
 
-        assertDiagnosticsError(
+        TestSupport.assertDiagnosticsError(
             from: macroExpression,
             expectedMessage: "'#withTimeout' requires a duration as its first argument.",
-            expectedID: MessageID(domain: "WithTimeoutMacro", id: "missingDurationArgument")
+            expectedID: MessageID(domain: "WithTimeoutMacro", id: "missingDurationArgument"),
+            expand: { expression in
+                try WithTimeoutMacro.expansion(
+                    of: expression,
+                    in: BasicMacroExpansionContext()
+                )
+            }
         )
     }
 
     @Test("Throws diagnostic when duration argument is labeled")
     func throwsDiagnosticWhenDurationArgumentIsLabeled() throws {
-        let macroExpression = try parseMacroExpression(
+        let macroExpression = try TestSupport.parseMacroExpression(
             """
             #withTimeout(duration: .seconds(3)) {
                 42
@@ -83,31 +87,43 @@ struct WithTimeoutMacroTests {
             """
         )
 
-        assertDiagnosticsError(
+        TestSupport.assertDiagnosticsError(
             from: macroExpression,
             expectedMessage: "'#withTimeout' duration argument must be unlabeled.",
-            expectedID: MessageID(domain: "WithTimeoutMacro", id: "durationMustBeUnlabeled")
+            expectedID: MessageID(domain: "WithTimeoutMacro", id: "durationMustBeUnlabeled"),
+            expand: { expression in
+                try WithTimeoutMacro.expansion(
+                    of: expression,
+                    in: BasicMacroExpansionContext()
+                )
+            }
         )
     }
 
     @Test("Throws diagnostic when invocation has too many arguments")
     func throwsDiagnosticWhenTooManyArgumentsAreProvided() throws {
-        let macroExpression = try parseMacroExpression(
+        let macroExpression = try TestSupport.parseMacroExpression(
             """
             #withTimeout(.seconds(1), operation: { 1 }, operation: { 2 })
             """
         )
 
-        assertDiagnosticsError(
+        TestSupport.assertDiagnosticsError(
             from: macroExpression,
             expectedMessage: "'#withTimeout' accepts at most one duration and one 'operation' argument.",
-            expectedID: MessageID(domain: "WithTimeoutMacro", id: "tooManyArguments")
+            expectedID: MessageID(domain: "WithTimeoutMacro", id: "tooManyArguments"),
+            expand: { expression in
+                try WithTimeoutMacro.expansion(
+                    of: expression,
+                    in: BasicMacroExpansionContext()
+                )
+            }
         )
     }
 
     @Test("Throws diagnostic when trailing closure and operation argument are both provided")
     func throwsDiagnosticWhenOperationIsSpecifiedTwice() throws {
-        let macroExpression = try parseMacroExpression(
+        let macroExpression = try TestSupport.parseMacroExpression(
             """
             #withTimeout(.seconds(3), operation: {
                 1
@@ -117,16 +133,22 @@ struct WithTimeoutMacroTests {
             """
         )
 
-        assertDiagnosticsError(
+        TestSupport.assertDiagnosticsError(
             from: macroExpression,
             expectedMessage: "'#withTimeout' operation must be provided either as trailing closure or 'operation:' argument, not both.",
-            expectedID: MessageID(domain: "WithTimeoutMacro", id: "operationClosureSpecifiedTwice")
+            expectedID: MessageID(domain: "WithTimeoutMacro", id: "operationClosureSpecifiedTwice"),
+            expand: { expression in
+                try WithTimeoutMacro.expansion(
+                    of: expression,
+                    in: BasicMacroExpansionContext()
+                )
+            }
         )
     }
 
     @Test("Throws diagnostic when operation argument label is invalid")
     func throwsDiagnosticWhenOperationArgumentLabelIsInvalid() throws {
-        let macroExpression = try parseMacroExpression(
+        let macroExpression = try TestSupport.parseMacroExpression(
             """
             #withTimeout(.seconds(3), work: {
                 42
@@ -134,27 +156,41 @@ struct WithTimeoutMacroTests {
             """
         )
 
-        assertDiagnosticsError(
+        TestSupport.assertDiagnosticsError(
             from: macroExpression,
             expectedMessage: "'#withTimeout' second argument must be labeled 'operation:'.",
-            expectedID: MessageID(domain: "WithTimeoutMacro", id: "invalidOperationArgumentLabel")
+            expectedID: MessageID(domain: "WithTimeoutMacro", id: "invalidOperationArgumentLabel"),
+            expand: { expression in
+                try WithTimeoutMacro.expansion(
+                    of: expression,
+                    in: BasicMacroExpansionContext()
+                )
+            }
         )
     }
 
     @Test("Throws diagnostic when operation closure is missing")
     func throwsDiagnosticWhenOperationClosureIsMissing() throws {
-        let macroExpression = try parseMacroExpression("#withTimeout(.seconds(3))")
+        let macroExpression = try TestSupport.parseMacroExpression(
+            "#withTimeout(.seconds(3))"
+        )
 
-        assertDiagnosticsError(
+        TestSupport.assertDiagnosticsError(
             from: macroExpression,
             expectedMessage: "'#withTimeout' requires an operation closure either as trailing closure or 'operation:' argument.",
-            expectedID: MessageID(domain: "WithTimeoutMacro", id: "missingOperationClosure")
+            expectedID: MessageID(domain: "WithTimeoutMacro", id: "missingOperationClosure"),
+            expand: { expression in
+                try WithTimeoutMacro.expansion(
+                    of: expression,
+                    in: BasicMacroExpansionContext()
+                )
+            }
         )
     }
 
     @Test("Throws diagnostic when invocation includes additional trailing closures")
     func throwsDiagnosticWhenAdditionalTrailingClosuresAreProvided() throws {
-        let macroExpression = try parseMacroExpression(
+        let macroExpression = try TestSupport.parseMacroExpression(
             """
             #withTimeout(.seconds(3)) {
                 1
@@ -164,64 +200,16 @@ struct WithTimeoutMacroTests {
             """
         )
 
-        assertDiagnosticsError(
+        TestSupport.assertDiagnosticsError(
             from: macroExpression,
             expectedMessage: "'#withTimeout' does not support additional trailing closures.",
-            expectedID: MessageID(domain: "WithTimeoutMacro", id: "additionalTrailingClosuresNotSupported")
-        )
-    }
-}
-
-// MARK: - Private Helpers
-
-private extension WithTimeoutMacroTests {
-    /// Parses a freestanding macro expression from source text.
-    ///
-    /// - Parameter source: Source containing one top-level expression statement.
-    /// - Returns: Parsed `MacroExpansionExprSyntax`.
-    func parseMacroExpression(_ source: String) throws -> MacroExpansionExprSyntax {
-        let sourceFile = Parser.parse(source: source)
-        let statement = try #require(
-            sourceFile.statements.first,
-            "Expected source to contain at least one statement: \(source)"
-        )
-        let expression = try #require(
-            statement.item.as(ExprSyntax.self),
-            "Expected first statement to be an expression: \(source)"
-        )
-        return try #require(
-            expression.as(MacroExpansionExprSyntax.self),
-            "Expected first expression to be a macro expansion: \(source)"
-        )
-    }
-
-    /// Asserts that `WithTimeoutMacro` expansion fails with one diagnostics error.
-    ///
-    /// - Parameters:
-    ///   - macroExpression: Parsed macro expression.
-    ///   - expectedMessage: Expected diagnostic text.
-    ///   - expectedID: Expected stable diagnostic identifier.
-    func assertDiagnosticsError(
-        from macroExpression: MacroExpansionExprSyntax,
-        expectedMessage: String,
-        expectedID: MessageID
-    ) {
-        do {
-            _ = try WithTimeoutMacro.expansion(
-                of: macroExpression,
-                in: BasicMacroExpansionContext()
-            )
-            Issue.record("Expected diagnostics error to be thrown")
-        } catch let error as DiagnosticsError {
-            guard let diagnostic = error.diagnostics.first else {
-                Issue.record("Expected at least one diagnostic")
-                return
+            expectedID: MessageID(domain: "WithTimeoutMacro", id: "additionalTrailingClosuresNotSupported"),
+            expand: { expression in
+                try WithTimeoutMacro.expansion(
+                    of: expression,
+                    in: BasicMacroExpansionContext()
+                )
             }
-            #expect(diagnostic.message == expectedMessage)
-            #expect(diagnostic.diagMessage.severity == .error)
-            #expect(diagnostic.diagMessage.diagnosticID == expectedID)
-        } catch {
-            Issue.record("Unexpected error type: \(error)")
-        }
+        )
     }
 }
