@@ -15,6 +15,7 @@ struct ConcurrencyMacrosPlugin: CompilerPlugin {
     let providingMacros: [Macro.Type] = [
         ThreadSafeMacro.self,
         ThreadSafeInitializerMacro.self,
-        ThreadSafePropertyMacro.self
+        ThreadSafePropertyMacro.self,
+        WithTimeoutMacro.self
     ]
 }

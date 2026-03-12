@@ -26,3 +26,17 @@ public macro ThreadSafeProperty() = #externalMacro(
     module: "ConcurrencyMacrosImplementation",
     type: "ThreadSafePropertyMacro"
 )
+
+/// Runs an async operation with a timeout duration.
+///
+/// Supports either a trailing closure or an explicit `operation:` argument closure.
+/// - Important: Timeout is enforced via structured cancellation, so non-cancel-cooperative operations
+/// may exceed the requested duration while child tasks unwind.
+@freestanding(expression)
+public macro withTimeout<T: Sendable>(
+    _ duration: Duration,
+    operation: @escaping @Sendable () async throws -> T
+) -> T = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "WithTimeoutMacro"
+)
