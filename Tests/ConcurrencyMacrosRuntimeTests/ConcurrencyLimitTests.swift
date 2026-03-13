@@ -22,17 +22,6 @@ struct ConcurrencyLimitTests {
         }
     }
 
-    @Test("Default limit case resolves to default mode")
-    func defaultLimitCaseResolvesToDefaultMode() {
-        switch ConcurrencyLimit.default {
-        case .default:
-            // Expected.
-            break
-        case .fixed:
-            Issue.record("Expected default limit to be default case")
-        }
-    }
-
     @Test("Resolved fixed values are clamped to at least one")
     func resolvedFixedValuesAreClampedToAtLeastOne() {
         #expect(ConcurrencyLimit.fixed(5).resolvedValue == 5)

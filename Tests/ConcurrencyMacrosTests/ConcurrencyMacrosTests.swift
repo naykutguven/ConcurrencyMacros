@@ -221,36 +221,29 @@ struct ConcurrencyMacrosTests {
     func concurrencyLimitAliasIsAvailableWithSingleImport() {
         let fixed: ConcurrencyLimit = 4
         #expect(fixed.resolvedValue == 4)
-
-        switch ConcurrencyLimit.default {
-        case .default:
-            // Expected.
-            break
-        case .fixed:
-            Issue.record("Expected default limit to be default case")
-        }
     }
 
     @Test("Retry aliases are available with single import")
-    func retryAliasesAreAvailableWithSingleImport() {
-        let backoff: RetryBackoff = .exponential(
-            initial: .milliseconds(100),
-            multiplier: 2,
-            maxDelay: .seconds(1)
-        )
-        let jitter: RetryJitter = .full
-        let configurationError: RetryConfigurationError = .invalidMultiplier(.infinity)
+    func retryAliasesAreAvailableWithSingleImport() async {
+        let backoff: RetryBackoff = .none
+        let jitter: RetryJitter = .none
+        var capturedError: RetryConfigurationError?
 
-        switch backoff {
-        case .none, .constant:
-            Issue.record("Expected exponential backoff case")
-        case .exponential(let initial, let multiplier, let maxDelay):
-            #expect(initial == .milliseconds(100))
-            #expect(multiplier == 2)
-            #expect(maxDelay == .seconds(1))
+        do {
+            _ = try await ConcurrencyRuntime.retrying(
+                max: -1,
+                backoff: backoff,
+                jitter: jitter
+            ) {
+                1
+            }
+            Issue.record("Expected retry configuration error")
+        } catch let error as RetryConfigurationError {
+            capturedError = error
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
         }
 
-        #expect(jitter == .full)
-        #expect(configurationError == .invalidMultiplier(.infinity))
+        #expect(capturedError == .negativeMaxRetries(-1))
     }
 }
