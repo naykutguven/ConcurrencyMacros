@@ -24,3 +24,12 @@ public typealias ConcurrencyLimit = ConcurrencyMacrosRuntime.ConcurrencyLimit
 
 /// Timeout error surfaced by `#withTimeout` and runtime timeout helpers.
 public typealias TimeoutError = ConcurrencyMacrosRuntime.ConcurrencyRuntime.TimeoutError
+
+/// Retry backoff strategy surfaced by `#retrying` and runtime retry helpers.
+public typealias RetryBackoff = ConcurrencyMacrosRuntime.RetryBackoff
+
+/// Retry jitter strategy surfaced by `#retrying` and runtime retry helpers.
+public typealias RetryJitter = ConcurrencyMacrosRuntime.RetryJitter
+
+/// Retry configuration error surfaced by `#retrying` and runtime retry helpers.
+public typealias RetryConfigurationError = ConcurrencyMacrosRuntime.ConcurrencyRuntime.RetryConfigurationError

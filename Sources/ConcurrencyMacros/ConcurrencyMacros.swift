@@ -43,6 +43,29 @@ public macro withTimeout<T: Sendable>(
     type: "WithTimeoutMacro"
 )
 
+/// Retries a throwing async operation with configurable backoff and jitter.
+///
+/// Supports either a trailing closure or an explicit `operation:` argument closure.
+///
+/// - Parameters:
+///   - max: Maximum number of retries after the initial attempt.
+///   - backoff: Backoff strategy controlling delay between retries.
+///   - jitter: Jitter strategy applied on top of backoff delay.
+///   - operation: Throwing async operation to execute.
+/// - Returns: The operation result.
+/// - Throws: `RetryConfigurationError` for invalid retry configuration, operation-thrown errors,
+///   or external cancellation.
+@freestanding(expression)
+public macro retrying<T>(
+    max: Int,
+    backoff: RetryBackoff,
+    jitter: RetryJitter,
+    operation: @escaping () async throws -> T
+) -> T = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "RetryingMacro"
+)
+
 /// Concurrently transforms collection elements while preserving input order.
 ///
 /// Supports either a trailing closure or an explicit `transform:` argument closure.
@@ -131,7 +154,7 @@ public macro concurrentCompactMap<Input: Collection, Output: Sendable>(
 ///   - transform: Async non-throwing transform returning a sequence per element.
 /// - Returns: A flattened array preserving outer input ordering.
 @freestanding(expression)
-public macro concurrentFlatMap<Input: Collection, Segment: Sequence>(
+public macro concurrentFlatMap<Input: Collection, Segment: Sequence & Sendable>(
     _ input: Input,
     limit: ConcurrencyLimit = .default,
     transform: @escaping @Sendable (Input.Element) async -> Segment
@@ -151,7 +174,7 @@ public macro concurrentFlatMap<Input: Collection, Segment: Sequence>(
 /// - Returns: A flattened array preserving outer input ordering.
 /// - Throws: The first error thrown by `transform`.
 @freestanding(expression)
-public macro concurrentFlatMap<Input: Collection, Segment: Sequence>(
+public macro concurrentFlatMap<Input: Collection, Segment: Sequence & Sendable>(
     _ input: Input,
     limit: ConcurrencyLimit = .default,
     transform: @escaping @Sendable (Input.Element) async throws -> Segment

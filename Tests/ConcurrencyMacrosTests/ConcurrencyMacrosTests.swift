@@ -80,6 +80,95 @@ struct ConcurrencyMacrosTests {
         }
     }
 
+    @Test("retrying compiles with single import and succeeds after retries")
+    func retryingCompilesWithSingleImportAndSucceedsAfterRetries() async throws {
+        actor Attempts {
+            private var count = 0
+
+            func next() -> Int {
+                defer { count += 1 }
+                return count
+            }
+        }
+
+        enum ExpectedError: Error {
+            case transientFailure
+        }
+
+        let attempts = Attempts()
+
+        let value = try await #retrying(
+            max: 3,
+            backoff: .constant(.milliseconds(1)),
+            jitter: .none
+        ) {
+            let attempt = await attempts.next()
+
+            guard attempt >= 2 else {
+                throw ExpectedError.transientFailure
+            }
+
+            return 42
+        }
+
+        #expect(value == 42)
+    }
+
+    @Test("retrying supports operation argument form")
+    func retryingSupportsOperationArgumentForm() async throws {
+        actor Attempts {
+            private var count = 0
+
+            func next() -> Int {
+                defer { count += 1 }
+                return count
+            }
+        }
+
+        enum ExpectedError: Error {
+            case transientFailure
+        }
+
+        let attempts = Attempts()
+
+        let value = try await #retrying(
+            max: 1,
+            backoff: .none,
+            jitter: .none,
+            operation: {
+                let attempt = await attempts.next()
+                if attempt == 0 {
+                    throw ExpectedError.transientFailure
+                }
+                return "ok"
+            }
+        )
+
+        #expect(value == "ok")
+    }
+
+    @Test("retrying surfaces RetryConfigurationError through ConcurrencyMacros import")
+    func retryingSurfacesRetryConfigurationErrorAlias() async {
+        var capturedError: RetryConfigurationError?
+
+        do {
+            _ = try await #retrying(
+                max: -1,
+                backoff: .none,
+                jitter: .none
+            ) {
+                1
+            }
+            Issue.record("Expected retry configuration error")
+        } catch let error as RetryConfigurationError {
+            capturedError = error
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+
+        #expect(capturedError == .negativeMaxRetries(-1))
+    }
+
     @Test("concurrentMap compiles with single import and non-throwing transform")
     func concurrentMapCompilesWithSingleImport() async {
         let values = await #concurrentMap([1, 2, 3], limit: 2) { value in
@@ -140,5 +229,28 @@ struct ConcurrencyMacrosTests {
         case .fixed:
             Issue.record("Expected default limit to be default case")
         }
+    }
+
+    @Test("Retry aliases are available with single import")
+    func retryAliasesAreAvailableWithSingleImport() {
+        let backoff: RetryBackoff = .exponential(
+            initial: .milliseconds(100),
+            multiplier: 2,
+            maxDelay: .seconds(1)
+        )
+        let jitter: RetryJitter = .full
+        let configurationError: RetryConfigurationError = .invalidMultiplier(.infinity)
+
+        switch backoff {
+        case .none, .constant:
+            Issue.record("Expected exponential backoff case")
+        case .exponential(let initial, let multiplier, let maxDelay):
+            #expect(initial == .milliseconds(100))
+            #expect(multiplier == 2)
+            #expect(maxDelay == .seconds(1))
+        }
+
+        #expect(jitter == .full)
+        #expect(configurationError == .invalidMultiplier(.infinity))
     }
 }

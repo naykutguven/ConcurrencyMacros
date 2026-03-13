@@ -15,6 +15,120 @@ public enum ConcurrencyRuntime {
         case timedOut(after: Duration)
     }
 
+    /// Error thrown when retry configuration is invalid.
+    public enum RetryConfigurationError: Error, Sendable, Equatable {
+        /// Indicates the retry count is negative.
+        case negativeMaxRetries(Int)
+
+        /// Indicates a `.constant` delay is zero or negative.
+        case nonPositiveConstantDelay(Duration)
+
+        /// Indicates an `.exponential` initial delay is zero or negative.
+        case nonPositiveInitialDelay(Duration)
+
+        /// Indicates an `.exponential` multiplier is not finite or not greater than one.
+        case invalidMultiplier(Double)
+
+        /// Indicates an `.exponential` max delay is zero or negative.
+        case nonPositiveMaxDelay(Duration)
+
+        /// Indicates an `.exponential` max delay is smaller than the initial delay.
+        case maxDelayLessThanInitial(initial: Duration, maxDelay: Duration)
+
+        /// Indicates exponential growth produced an unrepresentable delay.
+        case exponentialDelayOverflow(initial: Duration, multiplier: Double, retry: Int)
+    }
+
+    /// Runtime dependencies used by retry helpers.
+    ///
+    /// This is internal so tests can inject deterministic sleep and random behavior.
+    struct RetryingDependencies: Sendable {
+        let randomUnitInterval: @Sendable () -> Double
+        let sleep: @Sendable (Duration) async throws -> Void
+
+        init(
+            randomUnitInterval: @escaping @Sendable () -> Double = { Double.random(in: 0...1) },
+            sleep: @escaping @Sendable (Duration) async throws -> Void = { duration in
+                try await ContinuousClock().sleep(for: duration)
+            }
+        ) {
+            self.randomUnitInterval = randomUnitInterval
+            self.sleep = sleep
+        }
+
+        static let live = RetryingDependencies()
+    }
+
+    /// Retries a throwing async operation using the provided backoff and jitter strategy.
+    ///
+    /// - Parameters:
+    ///   - max: Maximum number of retries after the initial attempt.
+    ///   - backoff: Backoff strategy controlling delay between retries.
+    ///   - jitter: Jitter strategy applied on top of backoff delay.
+    ///   - operation: Throwing async operation to execute.
+    /// - Returns: The operation result.
+    /// - Throws: `RetryConfigurationError` for invalid retry configuration, operation-thrown errors,
+    ///   or external cancellation.
+    public static func retrying<T>(
+        max: Int,
+        backoff: RetryBackoff,
+        jitter: RetryJitter,
+        operation: @escaping () async throws -> T
+    ) async throws -> T {
+        try await retrying(
+            max: max,
+            backoff: backoff,
+            jitter: jitter,
+            dependencies: .live,
+            operation: operation
+        )
+    }
+
+    static func retrying<T>(
+        max: Int,
+        backoff: RetryBackoff,
+        jitter: RetryJitter,
+        dependencies: RetryingDependencies,
+        operation: @escaping () async throws -> T
+    ) async throws -> T {
+        let configuration = try validatedRetryConfiguration(
+            max: max,
+            backoff: backoff,
+            jitter: jitter
+        )
+        var exponentialState: ExponentialState?
+        var retry = 0
+
+        while true {
+            do {
+                return try await operation()
+            } catch let cancellation as CancellationError {
+                throw cancellation
+            } catch {
+                guard retry < configuration.maxRetries else {
+                    throw error
+                }
+
+                try Task.checkCancellation()
+                retry += 1
+
+                let baseDelay = try configuration.delay(
+                    beforeRetry: retry,
+                    exponentialState: &exponentialState
+                )
+                let delayedByJitter = jitteredDelay(
+                    baseDelay,
+                    jitter: configuration.jitter,
+                    randomUnitInterval: dependencies.randomUnitInterval
+                )
+
+                if delayedByJitter > .zero {
+                    try await dependencies.sleep(delayedByJitter)
+                }
+            }
+        }
+    }
+
     /// Executes `operation` and fails if it does not complete before `duration` expires.
     ///
     /// - Parameters:
@@ -128,7 +242,7 @@ public enum ConcurrencyRuntime {
     ///
     /// - Important: Child segments are flattened in input-element order. Elements within
     /// each child segment preserve that segment's own order.
-    public static func concurrentFlatMap<C: Collection, Segment: Sequence>(
+    public static func concurrentFlatMap<C: Collection, Segment: Sequence & Sendable>(
         _ sequence: C,
         limit: ConcurrencyLimit = .default,
         transform: @escaping @Sendable (C.Element) async -> Segment
@@ -151,7 +265,7 @@ public enum ConcurrencyRuntime {
     ///
     /// - Important: Child segments are flattened in input-element order. Elements within
     /// each child segment preserve that segment's own order.
-    public static func concurrentFlatMap<C: Collection, Segment: Sequence>(
+    public static func concurrentFlatMap<C: Collection, Segment: Sequence & Sendable>(
         _ sequence: C,
         limit: ConcurrencyLimit = .default,
         transform: @escaping @Sendable (C.Element) async throws -> Segment
@@ -196,6 +310,233 @@ public enum ConcurrencyRuntime {
 // MARK: - Private Helpers
 
 private extension ConcurrencyRuntime {
+    struct RetryConfiguration: Sendable {
+        let maxRetries: Int
+        let backoff: NormalizedBackoff
+        let jitter: RetryJitter
+
+        func delay(
+            beforeRetry retry: Int,
+            exponentialState: inout ExponentialState?
+        ) throws -> Duration {
+            switch backoff {
+            case .none:
+                return .zero
+            case .constant(let delay):
+                return delay
+            case .exponential(let definition):
+                return try definition.nextDelay(
+                    retry: retry,
+                    exponentialState: &exponentialState
+                )
+            }
+        }
+    }
+
+    enum NormalizedBackoff: Sendable {
+        case none
+        case constant(Duration)
+        case exponential(ExponentialDefinition)
+    }
+
+    struct ExponentialDefinition: Sendable {
+        let initial: Duration
+        let multiplier: Double
+        let maxDelay: Duration?
+
+        func nextDelay(
+            retry: Int,
+            exponentialState: inout ExponentialState?
+        ) throws -> Duration {
+            let currentState = exponentialState ?? ExponentialState(
+                delay: initial,
+                seconds: durationInSeconds(initial)
+            )
+
+            guard currentState.seconds.isFinite else {
+                throw RetryConfigurationError.exponentialDelayOverflow(
+                    initial: initial,
+                    multiplier: multiplier,
+                    retry: retry
+                )
+            }
+
+            if let maxDelay, currentState.delay >= maxDelay {
+                exponentialState = ExponentialState(
+                    delay: maxDelay,
+                    seconds: durationInSeconds(maxDelay)
+                )
+                return maxDelay
+            }
+
+            guard retry > 1 else {
+                exponentialState = currentState
+                return currentState.delay
+            }
+
+            let nextDelay: Duration
+
+            if let maxDelay {
+                let maxDelaySeconds = durationInSeconds(maxDelay)
+                if currentState.seconds >= maxDelaySeconds {
+                    nextDelay = maxDelay
+                } else if currentState.seconds >= maxDelaySeconds / multiplier {
+                    nextDelay = maxDelay
+                } else {
+                    nextDelay = min(
+                        try scaledDuration(
+                            currentState.delay,
+                            multiplier: multiplier,
+                            initial: initial,
+                            retry: retry
+                        ),
+                        maxDelay
+                    )
+                }
+            } else {
+                nextDelay = try scaledDuration(
+                    currentState.delay,
+                    multiplier: multiplier,
+                    initial: initial,
+                    retry: retry
+                )
+            }
+
+            exponentialState = ExponentialState(
+                delay: nextDelay,
+                seconds: durationInSeconds(nextDelay)
+            )
+
+            return nextDelay
+        }
+    }
+
+    struct ExponentialState: Sendable {
+        let delay: Duration
+        let seconds: Double
+    }
+
+    static func validatedRetryConfiguration(
+        max: Int,
+        backoff: RetryBackoff,
+        jitter: RetryJitter
+    ) throws -> RetryConfiguration {
+        guard max >= 0 else {
+            throw RetryConfigurationError.negativeMaxRetries(max)
+        }
+
+        let normalizedBackoff: NormalizedBackoff
+        switch backoff {
+        case .none:
+            normalizedBackoff = .none
+        case .constant(let delay):
+            guard delay > .zero else {
+                throw RetryConfigurationError.nonPositiveConstantDelay(delay)
+            }
+            normalizedBackoff = .constant(delay)
+        case .exponential(let initial, let multiplier, let maxDelay):
+            guard initial > .zero else {
+                throw RetryConfigurationError.nonPositiveInitialDelay(initial)
+            }
+
+            guard multiplier.isFinite, multiplier > 1 else {
+                throw RetryConfigurationError.invalidMultiplier(multiplier)
+            }
+
+            if let maxDelay {
+                guard maxDelay > .zero else {
+                    throw RetryConfigurationError.nonPositiveMaxDelay(maxDelay)
+                }
+
+                guard maxDelay >= initial else {
+                    throw RetryConfigurationError.maxDelayLessThanInitial(
+                        initial: initial,
+                        maxDelay: maxDelay
+                    )
+                }
+            }
+
+            normalizedBackoff = .exponential(
+                ExponentialDefinition(
+                    initial: initial,
+                    multiplier: multiplier,
+                    maxDelay: maxDelay
+                )
+            )
+        }
+
+        return RetryConfiguration(
+            maxRetries: max,
+            backoff: normalizedBackoff,
+            jitter: jitter
+        )
+    }
+
+    static func jitteredDelay(
+        _ delay: Duration,
+        jitter: RetryJitter,
+        randomUnitInterval: @Sendable () -> Double
+    ) -> Duration {
+        switch jitter {
+        case .none:
+            return delay
+        case .full:
+            let sample = normalizedUnitIntervalSample(randomUnitInterval())
+            return delay * sample
+        }
+    }
+
+    static func normalizedUnitIntervalSample(_ value: Double) -> Double {
+        guard value.isFinite else { return 0 }
+        return min(max(value, 0), 1)
+    }
+
+    static func durationInSeconds(_ duration: Duration) -> Double {
+        let components = duration.components
+        let attosecondsPerSecond = 1_000_000_000_000_000_000.0
+        return Double(components.seconds) + (Double(components.attoseconds) / attosecondsPerSecond)
+    }
+
+    static func scaledDuration(
+        _ duration: Duration,
+        multiplier: Double,
+        initial: Duration,
+        retry: Int
+    ) throws -> Duration {
+        let seconds = durationInSeconds(duration)
+        guard seconds.isFinite else {
+            throw RetryConfigurationError.exponentialDelayOverflow(
+                initial: initial,
+                multiplier: multiplier,
+                retry: retry
+            )
+        }
+
+        let scaledSeconds = seconds * multiplier
+        guard scaledSeconds.isFinite else {
+            throw RetryConfigurationError.exponentialDelayOverflow(
+                initial: initial,
+                multiplier: multiplier,
+                retry: retry
+            )
+        }
+
+        // `Duration.seconds` can trap when converting out-of-range doubles to internal integer
+        // components, so clamp strictly below the representable boundary before construction.
+        let maxSeconds = maxRepresentableDurationSeconds.nextDown
+        guard scaledSeconds <= maxSeconds else {
+            throw RetryConfigurationError.exponentialDelayOverflow(
+                initial: initial,
+                multiplier: multiplier,
+                retry: retry
+            )
+        }
+
+        return Duration.seconds(scaledSeconds)
+    }
+
+    static let maxRepresentableDurationSeconds = Double(Int64.max)
+
     /// Value paired with source index to restore deterministic ordering after concurrent execution.
     struct IndexedValue<Value: Sendable>: Sendable {
         let index: Int

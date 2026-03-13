@@ -17,6 +17,7 @@ struct ConcurrencyMacrosPlugin: CompilerPlugin {
         ThreadSafeInitializerMacro.self,
         ThreadSafePropertyMacro.self,
         WithTimeoutMacro.self,
+        RetryingMacro.self,
         ConcurrentMapMacro.self,
         ConcurrentCompactMapMacro.self,
         ConcurrentForEachMacro.self,
