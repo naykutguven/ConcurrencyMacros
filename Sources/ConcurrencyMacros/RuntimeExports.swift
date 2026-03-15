@@ -33,3 +33,16 @@ public typealias RetryJitter = ConcurrencyMacrosRuntime.RetryJitter
 
 /// Retry configuration error surfaced by `#retrying` and runtime retry helpers.
 public typealias RetryConfigurationError = ConcurrencyMacrosRuntime.ConcurrencyRuntime.RetryConfigurationError
+
+/// Cancellation policy used by single-flight runtime stores.
+public typealias SingleFlightCancellationPolicy = ConcurrencyMacrosRuntime.SingleFlightCancellationPolicy
+
+/// Non-throwing runtime single-flight store surfaced for macro-generated code.
+public typealias SingleFlightStore<Value: Sendable> = ConcurrencyMacrosRuntime.SingleFlightStore<Value>
+
+/// Throwing runtime single-flight store surfaced for macro-generated code.
+public typealias ThrowingSingleFlightStore<Value: Sendable> = ConcurrencyMacrosRuntime.ThrowingSingleFlightStore<Value>
+
+/// Compile-time helper used by generated single-flight wrappers to enforce sendable captures.
+@inlinable
+public func __singleFlightRequireSendable<T: Sendable>(_ value: T) {}

@@ -31,7 +31,6 @@ struct ConcurrencyMacrosTests {
             values.count
         }
     }
-
     @Test("ThreadSafe compiles with a single import")
     func threadSafeCompilesWithSingleImport() {
         let counter = Counter(count: 1)
@@ -217,6 +216,56 @@ struct ConcurrencyMacrosTests {
         #expect(await collector.count() == 3)
     }
 
+    @Test("SingleFlightActor compiles with single import and deduplicates same key")
+    func singleFlightActorCompilesWithSingleImportAndDeduplicatesSameKey() async throws {
+        let service = AvatarService()
+
+        async let first = service.loadAvatar(userID: 1)
+        async let second = service.loadAvatar(userID: 1)
+        async let third = service.loadAvatar(userID: 1)
+
+        let firstValue = try await first
+        let secondValue = try await second
+        let thirdValue = try await third
+
+        #expect(firstValue == 1)
+        #expect(secondValue == 1)
+        #expect(thirdValue == 1)
+        #expect(await service.executionCount() == 1)
+    }
+
+    @Test("SingleFlightActor using shared store supports intentional cross-method dedupe")
+    func singleFlightActorUsingSharedStoreDedupesAcrossMethods() async {
+        let service = SharedStoreService()
+
+        async let first = service.first(id: 1)
+        async let second = service.second(id: 1)
+
+        let firstValue = await first
+        let secondValue = await second
+
+        #expect(firstValue == 1)
+        #expect(secondValue == 1)
+        #expect(await service.executionCount() == 1)
+    }
+
+    @Test("SingleFlightActor defaults to per-method stores and does not cross-dedupe methods")
+    func singleFlightActorDefaultsToPerMethodStores() async {
+        let service = PerMethodStoreService()
+
+        async let first = service.first(id: 1)
+        async let second = service.second(id: 1)
+
+        let firstValue = await first
+        let secondValue = await second
+        let counts = await service.executionCounts()
+
+        #expect(firstValue == 1)
+        #expect(secondValue == 1)
+        #expect(counts.0 == 1)
+        #expect(counts.1 == 1)
+    }
+
     @Test("ConcurrencyLimit alias is available with single import")
     func concurrencyLimitAliasIsAvailableWithSingleImport() {
         let fixed: ConcurrencyLimit = 4
@@ -245,5 +294,67 @@ struct ConcurrencyMacrosTests {
         }
 
         #expect(capturedError == .negativeMaxRetries(-1))
+    }
+}
+
+private actor AvatarService {
+    private var executions = 0
+
+    @SingleFlightActor(key: { (userID: Int) in userID })
+    func loadAvatar(userID: Int) async throws -> Int {
+        executions += 1
+        try await Task.sleep(for: .milliseconds(25))
+        return userID
+    }
+
+    func executionCount() -> Int {
+        executions
+    }
+}
+
+private let sharedStoreServiceFlights = SingleFlightStore<Int>()
+
+private actor SharedStoreService {
+    private var executions = 0
+
+    @SingleFlightActor(key: { (id: Int) in id }, using: sharedStoreServiceFlights)
+    func first(id: Int) async -> Int {
+        executions += 1
+        await Task.yield()
+        return id
+    }
+
+    @SingleFlightActor(key: { (id: Int) in id }, using: sharedStoreServiceFlights)
+    func second(id: Int) async -> Int {
+        executions += 1
+        await Task.yield()
+        return id
+    }
+
+    func executionCount() -> Int {
+        executions
+    }
+}
+
+private actor PerMethodStoreService {
+    private var firstExecutions = 0
+    private var secondExecutions = 0
+
+    @SingleFlightActor(key: { (id: Int) in id })
+    func first(id: Int) async -> Int {
+        firstExecutions += 1
+        await Task.yield()
+        return id
+    }
+
+    @SingleFlightActor(key: { (id: Int) in id })
+    func second(id: Int) async -> Int {
+        secondExecutions += 1
+        await Task.yield()
+        return id
+    }
+
+    func executionCounts() -> (Int, Int) {
+        (firstExecutions, secondExecutions)
     }
 }

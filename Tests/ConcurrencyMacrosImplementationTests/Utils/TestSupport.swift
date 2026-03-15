@@ -12,6 +12,52 @@ import SwiftSyntaxMacroExpansion
 import Testing
 
 enum TestSupport {
+    static func firstAttributedFunction(in source: String) throws -> FunctionDeclSyntax {
+        let sourceFile = Parser.parse(source: source)
+
+        for statement in sourceFile.statements {
+            if let function = statement.item.as(FunctionDeclSyntax.self),
+               function.attributes.first?.as(AttributeSyntax.self) != nil
+            {
+                return function
+            }
+
+            if let actor = statement.item.as(ActorDeclSyntax.self),
+               let function = actor.memberBlock.members
+                   .compactMap({ $0.decl.as(FunctionDeclSyntax.self) })
+                   .first(where: { $0.attributes.first?.as(AttributeSyntax.self) != nil })
+            {
+                return function
+            }
+
+            if let structure = statement.item.as(StructDeclSyntax.self),
+               let function = structure.memberBlock.members
+                   .compactMap({ $0.decl.as(FunctionDeclSyntax.self) })
+                   .first(where: { $0.attributes.first?.as(AttributeSyntax.self) != nil })
+            {
+                return function
+            }
+
+            if let ext = statement.item.as(ExtensionDeclSyntax.self),
+               let function = ext.memberBlock.members
+                   .compactMap({ $0.decl.as(FunctionDeclSyntax.self) })
+                   .first(where: { $0.attributes.first?.as(AttributeSyntax.self) != nil })
+            {
+                return function
+            }
+        }
+
+        Issue.record("Expected source to include an attributed function declaration: \(source)")
+        throw Failure()
+    }
+
+    static func firstAttribute(in function: FunctionDeclSyntax) throws -> AttributeSyntax {
+        try #require(
+            function.attributes.first?.as(AttributeSyntax.self),
+            "Expected function to contain an attribute"
+        )
+    }
+
     static func parseMacroExpression(_ source: String) throws -> MacroExpansionExprSyntax {
         let sourceFile = Parser.parse(source: source)
         let statement = try #require(
@@ -50,4 +96,6 @@ enum TestSupport {
             Issue.record("Unexpected error type: \(error)")
         }
     }
+
+    struct Failure: Error {}
 }

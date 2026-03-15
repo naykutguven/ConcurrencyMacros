@@ -29,6 +29,33 @@ public macro ThreadSafeProperty() = #externalMacro(
     type: "ThreadSafePropertyMacro"
 )
 
+/// Deduplicates concurrent in-flight actor method work by key.
+///
+/// - Parameters:
+///   - key: Expression used as the single-flight key. Key closures are evaluated exactly once per invocation.
+///   - using: Optional explicit store expression resolvable from declaration scope
+///            (for example a top-level or static store symbol).
+///            If omitted, a per-method store is synthesized.
+///   - policy: Cancellation policy applied when waiters cancel.
+///
+/// - Important: `@SingleFlightActor` only deduplicates concurrent in-flight invocations. It does not cache
+///   success or failure after completion.
+/// - Important: v1 scope is actor instance methods declared in nominal actor types. Extensions,
+///   `nonisolated`, `static`, and `class` methods are rejected.
+/// - Important: `using:` must reference an existing store value (identifier/member access), not a
+///   key-path or call expression.
+/// - Important: generated wrappers enforce `Sendable` for the evaluated key and forwarded parameters.
+@attached(body)
+@attached(peer, names: arbitrary)
+public macro SingleFlightActor(
+    key: Any,
+    using: Any? = nil,
+    policy: SingleFlightCancellationPolicy = .cancelWhenNoWaiters
+) = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "SingleFlightActorMacro"
+)
+
 /// Runs an async operation with a timeout duration.
 ///
 /// Supports either a trailing closure or an explicit `operation:` argument closure.
