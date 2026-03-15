@@ -103,29 +103,36 @@ extension FunctionDeclSyntax {
     }
 
     /// Returns a diagnostic message describing the first unsupported parameter form, if any.
-    var unsupportedSingleFlightParameterMessage: String? {
+    ///
+    /// - Parameter macroName: The user-facing macro name used in emitted diagnostics.
+    func unsupportedSingleFlightParameterMessage(macroName: String) -> String? {
         for parameter in signature.parameterClause.parameters {
             if parameter.type.trimmedDescription.hasPrefix("inout ") {
-                return "'@SingleFlightActor' does not support 'inout' parameters."
+                return "'@\(macroName)' does not support 'inout' parameters."
             }
 
             if parameter.ellipsis != nil {
-                return "'@SingleFlightActor' does not support variadic parameters."
+                return "'@\(macroName)' does not support variadic parameters."
             }
 
             let parameterType = parameter.type.trimmedDescription
             if parameterType.contains("each ") || parameterType.contains("repeat ") {
-                return "'@SingleFlightActor' does not support parameter packs."
+                return "'@\(macroName)' does not support parameter packs."
             }
 
             let firstName = parameter.firstName.text
             let secondName = parameter.secondName?.text
             if firstName == "_", secondName == nil || secondName == "_" {
-                return "'@SingleFlightActor' requires parameters to have a usable local name."
+                return "'@\(macroName)' requires parameters to have a usable local name."
             }
         }
 
         return nil
+    }
+
+    /// Returns a diagnostic message describing the first unsupported parameter form for `@SingleFlightActor`.
+    var unsupportedSingleFlightParameterMessage: String? {
+        unsupportedSingleFlightParameterMessage(macroName: "SingleFlightActor")
     }
 
     /// Indicates whether the function is declared in an extension.
@@ -136,6 +143,16 @@ extension FunctionDeclSyntax {
     /// Indicates whether the function is declared in an actor nominal type.
     var isDeclaredInActor: Bool {
         nearestEnclosingDeclGroup?.is(ActorDeclSyntax.self) == true
+    }
+
+    /// Indicates whether the function is declared in a class nominal type.
+    var isDeclaredInClass: Bool {
+        nearestEnclosingDeclGroup?.is(ClassDeclSyntax.self) == true
+    }
+
+    /// Returns the nearest enclosing class declaration, if any.
+    var nearestEnclosingClassDecl: ClassDeclSyntax? {
+        nearestEnclosingDeclGroup?.as(ClassDeclSyntax.self)
     }
 
     private var nearestEnclosingDeclGroup: Syntax? {

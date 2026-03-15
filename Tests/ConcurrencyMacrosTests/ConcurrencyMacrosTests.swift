@@ -266,6 +266,56 @@ struct ConcurrencyMacrosTests {
         #expect(counts.1 == 1)
     }
 
+    @Test("SingleFlightClass compiles with single import and deduplicates same key")
+    func singleFlightClassCompilesWithSingleImportAndDeduplicatesSameKey() async throws {
+        let service = ClassAvatarService()
+
+        async let first = service.loadAvatar(userID: 1)
+        async let second = service.loadAvatar(userID: 1)
+        async let third = service.loadAvatar(userID: 1)
+
+        let firstValue = try await first
+        let secondValue = try await second
+        let thirdValue = try await third
+
+        #expect(firstValue == 1)
+        #expect(secondValue == 1)
+        #expect(thirdValue == 1)
+        #expect(await service.executionCount() == 1)
+    }
+
+    @Test("SingleFlightClass using shared store supports intentional cross-method dedupe")
+    func singleFlightClassUsingSharedStoreDedupesAcrossMethods() async {
+        let service = SharedStoreClassService()
+
+        async let first = service.first(id: 1)
+        async let second = service.second(id: 1)
+
+        let firstValue = await first
+        let secondValue = await second
+
+        #expect(firstValue == 1)
+        #expect(secondValue == 1)
+        #expect(await service.executionCount() == 1)
+    }
+
+    @Test("SingleFlightClass separate stores do not cross-dedupe methods")
+    func singleFlightClassSeparateStoresDoNotCrossDedupeMethods() async {
+        let service = SeparateStoreClassService()
+
+        async let first = service.first(id: 1)
+        async let second = service.second(id: 1)
+
+        let firstValue = await first
+        let secondValue = await second
+        let counts = await service.executionCounts()
+
+        #expect(firstValue == 1)
+        #expect(secondValue == 1)
+        #expect(counts.0 == 1)
+        #expect(counts.1 == 1)
+    }
+
     @Test("ConcurrencyLimit alias is available with single import")
     func concurrencyLimitAliasIsAvailableWithSingleImport() {
         let fixed: ConcurrencyLimit = 4
@@ -313,6 +363,10 @@ private actor AvatarService {
 }
 
 private let sharedStoreServiceFlights = SingleFlightStore<Int>()
+private let classAvatarFlights = ThrowingSingleFlightStore<Int>()
+private let sharedStoreClassFlights = SingleFlightStore<Int>()
+private let separateStoreClassFirstFlights = SingleFlightStore<Int>()
+private let separateStoreClassSecondFlights = SingleFlightStore<Int>()
 
 private actor SharedStoreService {
     private var executions = 0
@@ -356,5 +410,93 @@ private actor PerMethodStoreService {
 
     func executionCounts() -> (Int, Int) {
         (firstExecutions, secondExecutions)
+    }
+}
+
+private actor ClassCounterActor {
+    private var value = 0
+
+    func increment() {
+        value += 1
+    }
+
+    func current() -> Int {
+        value
+    }
+}
+
+private actor ClassDualCounterActor {
+    private var first = 0
+    private var second = 0
+
+    func incrementFirst() {
+        first += 1
+    }
+
+    func incrementSecond() {
+        second += 1
+    }
+
+    func counts() -> (Int, Int) {
+        (first, second)
+    }
+}
+
+private final class ClassAvatarService: Sendable {
+    private let executions = ClassCounterActor()
+
+    @SingleFlightClass(key: { (userID: Int) in userID }, using: classAvatarFlights)
+    func loadAvatar(userID: Int) async throws -> Int {
+        await executions.increment()
+        try await Task.sleep(for: .milliseconds(25))
+        return userID
+    }
+
+    func executionCount() async -> Int {
+        await executions.current()
+    }
+}
+
+private final class SharedStoreClassService: Sendable {
+    private let executions = ClassCounterActor()
+
+    @SingleFlightClass(key: { (id: Int) in id }, using: sharedStoreClassFlights)
+    func first(id: Int) async -> Int {
+        await executions.increment()
+        await Task.yield()
+        return id
+    }
+
+    @SingleFlightClass(key: { (id: Int) in id }, using: sharedStoreClassFlights)
+    func second(id: Int) async -> Int {
+        await executions.increment()
+        await Task.yield()
+        return id
+    }
+
+    func executionCount() async -> Int {
+        await executions.current()
+    }
+}
+
+private final class SeparateStoreClassService: Sendable {
+    private let counters = ClassDualCounterActor()
+
+    @SingleFlightClass(key: { (id: Int) in id }, using: separateStoreClassFirstFlights)
+    func first(id: Int) async -> Int {
+        await counters.incrementFirst()
+        await Task.yield()
+        return id
+    }
+
+    @SingleFlightClass(key: { (id: Int) in id }, using: separateStoreClassSecondFlights)
+    func second(id: Int) async -> Int {
+        await counters.incrementSecond()
+        await Task.yield()
+        return id
+    }
+
+    func executionCounts() async -> (Int, Int) {
+        await counters.counts()
     }
 }

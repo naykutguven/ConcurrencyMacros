@@ -112,4 +112,50 @@ extension ClassDeclSyntax {
         }
         return String(value[..<match.range.lowerBound])
     }
+
+    /// Indicates whether the class declaration is explicitly `final`.
+    var isFinalDeclaration: Bool {
+        modifiers.contains { modifier in
+            modifier.name.tokenKind == .keyword(.final) || modifier.name.text == "final"
+        }
+    }
+
+    /// Indicates whether the class declares checked `Sendable` conformance explicitly.
+    var hasExplicitSendableConformance: Bool {
+        explicitSendableConformanceKind == .checked
+    }
+
+    /// Indicates whether the class declares `@unchecked Sendable` conformance explicitly.
+    var hasExplicitUncheckedSendableConformance: Bool {
+        explicitSendableConformanceKind == .unchecked
+    }
+
+    private var explicitSendableConformanceKind: SendableConformanceKind {
+        guard let inheritedTypes = inheritanceClause?.inheritedTypes else {
+            return .none
+        }
+
+        var hasCheckedSendable = false
+
+        for inheritedType in inheritedTypes {
+            let normalizedTypeSource = inheritedType.type.trimmedDescription
+                .replacingOccurrences(of: " ", with: "")
+
+            if normalizedTypeSource == "@uncheckedSendable" || normalizedTypeSource == "@uncheckedSwift.Sendable" {
+                return .unchecked
+            }
+
+            if normalizedTypeSource == "Sendable" || normalizedTypeSource == "Swift.Sendable" {
+                hasCheckedSendable = true
+            }
+        }
+
+        return hasCheckedSendable ? .checked : .none
+    }
+
+    private enum SendableConformanceKind {
+        case none
+        case checked
+        case unchecked
+    }
 }

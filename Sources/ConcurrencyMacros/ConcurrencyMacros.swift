@@ -56,6 +56,33 @@ public macro SingleFlightActor(
     type: "SingleFlightActorMacro"
 )
 
+/// Deduplicates concurrent in-flight class method work by key.
+///
+/// - Parameters:
+///   - key: Expression used as the single-flight key. Key closures are evaluated exactly once per invocation.
+///   - using: Explicit store expression resolvable from declaration scope.
+///   - policy: Cancellation policy applied when waiters cancel.
+///
+/// - Important: `@SingleFlightClass` only deduplicates concurrent in-flight invocations. It does not cache
+///   success or failure after completion.
+/// - Important: v1 scope is nominal class instance methods only. Extensions, `static`, and `class` methods
+///   are rejected.
+/// - Important: the enclosing class must be declared `final` and explicitly conform to checked `Sendable`.
+///   `@unchecked Sendable` is rejected in v1.
+/// - Important: `using:` is required and must reference an existing store value (identifier/member access),
+///   not a key-path or call expression.
+/// - Important: generated wrappers enforce `Sendable` for `self`, the evaluated key, and forwarded parameters.
+@attached(body)
+@attached(peer, names: arbitrary)
+public macro SingleFlightClass(
+    key: Any,
+    using: Any,
+    policy: SingleFlightCancellationPolicy = .cancelWhenNoWaiters
+) = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "SingleFlightClassMacro"
+)
+
 /// Runs an async operation with a timeout duration.
 ///
 /// Supports either a trailing closure or an explicit `operation:` argument closure.

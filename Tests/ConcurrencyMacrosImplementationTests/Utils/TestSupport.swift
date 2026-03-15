@@ -38,6 +38,14 @@ enum TestSupport {
                 return function
             }
 
+            if let classDecl = statement.item.as(ClassDeclSyntax.self),
+               let function = classDecl.memberBlock.members
+                   .compactMap({ $0.decl.as(FunctionDeclSyntax.self) })
+                   .first(where: { $0.attributes.first?.as(AttributeSyntax.self) != nil })
+            {
+                return function
+            }
+
             if let ext = statement.item.as(ExtensionDeclSyntax.self),
                let function = ext.memberBlock.members
                    .compactMap({ $0.decl.as(FunctionDeclSyntax.self) })
