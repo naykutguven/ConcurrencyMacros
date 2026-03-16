@@ -483,7 +483,7 @@ try await #concurrentForEach(files, limit: .fixed(3)) { file in
 - No aggregate result is returned.
 - Throwing operation variant throws the first error and cancels remaining in-flight work.
 
-## Support Macros (No Examples)
+## Support Macros
 
 These macros are intentionally documented as support/helper APIs and are typically used by higher-level macros or infrastructure setup:
 
@@ -491,6 +491,11 @@ These macros are intentionally documented as support/helper APIs and are typical
 - `@ThreadSafeProperty`: internal accessor rewrite helper used by `@ThreadSafe`.
 - `@StreamBridgeDefaults`: declares per-type defaults for `@StreamBridge` (`cancel`, `buffering`, `safety`).
 - `@StreamToken`: synthesizes `StreamBridgeTokenCancellable` conformance by mapping a token cancel method.
+
+## Acknowledgements
+
+- Special thanks to [Matt Massicotte](https://www.massicotte.org/) for talks and writing that helped shape this package's Swift Concurrency approach.
+- `@ThreadSafe` was inspired by the `ThreadSafe` macro in [getcmd-dev/cmd](https://github.com/getcmd-dev/cmd/blob/8286081d3bb9c688efb151c2595df825996fa838/app/modules/macros/ThreadSafe/Macro/ThreadSafe.swift). The implementation in this package is independent.
 
 ## Contributing
 
