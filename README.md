@@ -4,7 +4,7 @@
 [![Platforms](https://img.shields.io/badge/Platforms-iOS%2017%2B%20%7C%20macOS%2014%2B%20%7C%20tvOS%2017%2B%20%7C%20watchOS%2010%2B-blue.svg)](#requirements)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
 
-`ConcurrencyMacros` is a production-focused Swift Concurrency macro package for the patterns teams implement repeatedly: lock-backed shared state, in-flight deduplication, callback-to-stream bridging, timeouts, retries, and bounded concurrent collection work.
+`ConcurrencyMacros` is a production-focused Swift Concurrency macro package for the patterns teams implement repeatedly: lock-backed shared state (with practical checked `Sendable` adoption), in-flight deduplication, callback-to-stream bridging, timeouts, retries, and bounded concurrent collection work.
 
 The package keeps macro call sites small while routing behavior through explicit runtime helpers with documented safety constraints.
 
@@ -39,14 +39,46 @@ Add the library product to your target:
 
 ## Quick Start
 
+Start with these flagship macros in most apps:
+
+- `@ThreadSafe`: lock-backed mutable state with practical checked `Sendable` adoption for `final` classes.
+- `@SingleFlightActor`: deduplicate in-flight actor work by key.
+- `#withTimeout`: enforce a hard deadline for async operations.
+- `#retrying`: recover from transient failures with explicit retry policy.
+- `#concurrentMap`: run bounded concurrent fan-out while preserving input order.
+
 ```swift
 import ConcurrencyMacros
 import Foundation
 
+struct Avatar: Sendable {
+    let data: Data
+}
+
+protocol AvatarAPI: Sendable {
+    func fetchAvatar(for userID: UUID) async throws -> Avatar
+}
+
+@ThreadSafe
+final class AvatarCache: Sendable {
+    var values: [UUID: Avatar] = [:]
+}
+
 actor AvatarService {
+    private let api: AvatarAPI
+    private let cache = AvatarCache()
+
+    init(api: AvatarAPI) {
+        self.api = api
+    }
+
     @SingleFlightActor(key: { (userID: UUID) in userID })
-    func avatar(for userID: UUID) async throws -> Data {
-        try await #withTimeout(.seconds(5)) {
+    func avatar(for userID: UUID) async throws -> Avatar {
+        if let cached = cache.values[userID] {
+            return cached
+        }
+
+        let fetched = try await #withTimeout(.seconds(5)) {
             try await #retrying(
                 max: 2,
                 backoff: .exponential(initial: .milliseconds(200), multiplier: 2, maxDelay: .seconds(2)),
@@ -55,12 +87,47 @@ actor AvatarService {
                 try await api.fetchAvatar(for: userID)
             }
         }
+
+        cache.values[userID] = fetched
+        return fetched
     }
 }
 
-func loadAvatars(userIDs: [UUID], service: AvatarService) async throws -> [Data] {
+func loadAvatars(userIDs: [UUID], service: AvatarService) async throws -> [Avatar] {
     try await #concurrentMap(userIDs, limit: .fixed(4)) { id in
         try await service.avatar(for: id)
+    }
+}
+```
+
+### Optional: Stream Bridging Path
+
+If you integrate callback-first SDKs, add `@StreamBridge` as a companion flagship macro:
+
+```swift
+import ConcurrencyMacros
+
+final class PriceFeedClient: Sendable {
+    @StreamBridge(
+        as: "priceStream",
+        event: .label("handler"),
+        cancel: .ownerMethod("stopObserving"),
+        buffering: .bufferingNewest(32),
+        safety: .strict
+    )
+    func observePrice(
+        symbol: String,
+        handler: @escaping @Sendable (PriceTick) -> Void
+    ) -> ObservationToken {
+        sdk.observePrice(symbol: symbol, handler: handler)
+    }
+
+    func stopObserving(_ token: ObservationToken) {}
+}
+
+func consume(client: PriceFeedClient) async {
+    for await tick in client.priceStream(symbol: "AAPL") {
+        print(tick)
     }
 }
 ```
@@ -89,12 +156,13 @@ func loadAvatars(userIDs: [UUID], service: AvatarService) async throws -> [Data]
 ### What it does
 
 `@ThreadSafe` synthesizes lock-backed internal state and redirects mutable stored-property access through generated accessors.
+It also makes adopting checked `Sendable` on stateful classes more practical by centralizing mutable state behind a synchronized, `Sendable` internal model.
 
 ### When to use
 
 Use it when you need synchronous read/write APIs on shared mutable class state while preserving consistent lock semantics.
 
-<details><summary>Example</summary>
+<details open><summary>Example</summary>
 
 ```swift
 import ConcurrencyMacros
@@ -129,7 +197,7 @@ final class SessionStore {
 
 Use it for expensive actor-isolated async operations where duplicate concurrent requests should coalesce.
 
-<details><summary>Example</summary>
+<details open><summary>Example</summary>
 
 ```swift
 import ConcurrencyMacros
@@ -163,7 +231,7 @@ actor ProfileService {
 
 Use it when request coalescing is needed in reference-type services that cannot be actors.
 
-<details><summary>Example</summary>
+<details open><summary>Example</summary>
 
 ```swift
 import ConcurrencyMacros
@@ -199,7 +267,7 @@ final class ProfileService: Sendable {
 
 Use it when bridging callback-based SDK observation APIs to structured async stream consumption.
 
-<details><summary>Example</summary>
+<details open><summary>Example</summary>
 
 ```swift
 import ConcurrencyMacros
@@ -247,7 +315,7 @@ final class PriceFeedClient: Sendable {
 
 Use it around operations that must not wait indefinitely (for example network requests or remote IPC calls).
 
-<details><summary>Example</summary>
+<details open><summary>Example</summary>
 
 ```swift
 import ConcurrencyMacros
@@ -276,7 +344,7 @@ let payload = try await #withTimeout(.seconds(3)) {
 
 Use it for transient failures where bounded retries improve success rate without hiding persistent errors.
 
-<details><summary>Example</summary>
+<details open><summary>Example</summary>
 
 ```swift
 import ConcurrencyMacros
@@ -310,7 +378,7 @@ let receipt = try await #retrying(
 
 Use it for batch fetch/transform pipelines where order must match source input.
 
-<details><summary>Example</summary>
+<details open><summary>Example</summary>
 
 ```swift
 import ConcurrencyMacros
@@ -340,7 +408,7 @@ let metadata = try await #concurrentMap(urls, limit: .fixed(6)) { url in
 
 Use it when each input may or may not yield a value, and output should contain only successful non-`nil` results.
 
-<details><summary>Example</summary>
+<details open><summary>Example</summary>
 
 ```swift
 import ConcurrencyMacros
@@ -369,7 +437,7 @@ let avatars = try await #concurrentCompactMap(users, limit: .fixed(4)) { user in
 
 Use it when each input fan-outs to multiple outputs and you need a single flattened result.
 
-<details><summary>Example</summary>
+<details open><summary>Example</summary>
 
 ```swift
 import ConcurrencyMacros
@@ -397,7 +465,7 @@ let results = try await #concurrentFlatMap(providers, limit: .fixed(3)) { provid
 
 Use it for side-effect workflows such as uploads, invalidations, or fan-out notifications.
 
-<details><summary>Example</summary>
+<details open><summary>Example</summary>
 
 ```swift
 import ConcurrencyMacros
