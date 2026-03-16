@@ -93,6 +93,36 @@ struct StreamBridgeMacroTests {
         #expect(!peerOutput.contains("__streamBridgeRequireSendable("))
     }
 
+    @Test("Expands strict throwing bridge with sendable failure adapter")
+    func expandsStrictThrowingBridgeWithSendableFailureAdapter() throws {
+        let (peerOutput, _) = try expandedOutputs(
+            from: """
+            final class SocketClient: Sendable {
+                @StreamBridge(
+                    as: "messageStream",
+                    event: .label("onMessage"),
+                    failure: .label("onError", as: SocketError.self),
+                    completion: .label("onClose")
+                )
+                func connect(
+                    onMessage: @escaping @Sendable (Message) -> Void,
+                    onError: @escaping @Sendable (SocketError) -> Void,
+                    onClose: @escaping @Sendable () -> Void
+                ) -> ConnectionToken {
+                    makeConnection(
+                        onMessage: onMessage,
+                        onError: onError,
+                        onClose: onClose
+                    )
+                }
+            }
+            """
+        )
+
+        #expect(peerOutput.contains("StreamBridgeRuntime.makeThrowingStream("))
+        #expect(peerOutput.contains("let__streamBridgeOnFailureTyped:@Sendable(SocketError)->Void=__streamBridgeOnFailure"))
+    }
+
     @Test("Expands owner-method cancellation with explicit token argument label")
     func expandsOwnerMethodCancellationWithExplicitTokenArgumentLabel() throws {
         let (peerOutput, _) = try expandedOutputs(

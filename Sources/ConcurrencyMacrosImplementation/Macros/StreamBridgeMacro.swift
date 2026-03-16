@@ -413,10 +413,13 @@ private extension StreamBridgeMacro {
         let tokenCheckLine = tokenSendabilityCheckLine(for: method)
         let cancelSource = cancelClosureSource(for: method)
         let throwingFailureTypeSource = method.failureTypeSource ?? "any Error"
+        let typedFailureCallbackTypeSource = method.safety == .strict
+            ? "@Sendable (\(throwingFailureTypeSource)) -> Void"
+            : "(\(throwingFailureTypeSource)) -> Void"
         let registerSource: String = if isThrowingStream {
             """
             register: { __streamBridgeOnEvent, __streamBridgeOnFailure, __streamBridgeOnCompletion in
-                        let __streamBridgeOnFailureTyped: (\(throwingFailureTypeSource)) -> Void = __streamBridgeOnFailure
+                        let __streamBridgeOnFailureTyped: \(typedFailureCallbackTypeSource) = __streamBridgeOnFailure
                         let __streamBridgeToken = \(sourceCall)
                         \(tokenCheckLine)return __streamBridgeToken
                     }
