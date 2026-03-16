@@ -155,6 +155,11 @@ extension FunctionDeclSyntax {
         nearestEnclosingDeclGroup?.as(ClassDeclSyntax.self)
     }
 
+    /// Returns the nearest enclosing actor declaration, if any.
+    var nearestEnclosingActorDecl: ActorDeclSyntax? {
+        nearestEnclosingDeclGroup?.as(ActorDeclSyntax.self)
+    }
+
     private var nearestEnclosingDeclGroup: Syntax? {
         var current: Syntax? = Syntax(self).parent
         while let node = current {

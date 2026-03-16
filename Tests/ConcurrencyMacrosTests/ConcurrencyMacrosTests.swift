@@ -345,6 +345,40 @@ struct ConcurrencyMacrosTests {
 
         #expect(capturedError == .negativeMaxRetries(-1))
     }
+
+    @Test("StreamBridge generates AsyncStream wrappers that clean up token cancellation")
+    func streamBridgeGeneratesAsyncStreamWrappersThatCleanUpTokenCancellation() async {
+        let ticker = PriceTicker(value: 42)
+
+        let received = await Task<Int?, Never> {
+            for await price in ticker.priceStream(symbol: "AAPL") {
+                return price
+            }
+            return nil
+        }.value
+
+        #expect(received == 42)
+        #expect(ticker.cancelledCount() == 1)
+    }
+
+    @Test("StreamBridge generates throwing stream wrappers with erased error type")
+    func streamBridgeGeneratesThrowingStreamWrappersWithErasedErrorType() async {
+        let socket = SocketBridge()
+        let stream = socket.messageStream()
+
+        var capturedFailure: BridgeFailure?
+        do {
+            for try await _ in stream {}
+            Issue.record("Expected typed stream failure")
+        } catch let failure as BridgeFailure {
+            capturedFailure = failure
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+
+        #expect(capturedFailure == .disconnected)
+        #expect(socket.cancelledCount() == 1)
+    }
 }
 
 private actor AvatarService {
@@ -498,5 +532,80 @@ private final class SeparateStoreClassService: Sendable {
 
     func executionCounts() async -> (Int, Int) {
         await counters.counts()
+    }
+}
+
+@StreamToken(cancelMethod: "invalidate")
+private final class BridgeObservationToken: Sendable {
+    private let onCancel: @Sendable () -> Void
+
+    init(onCancel: @escaping @Sendable () -> Void) {
+        self.onCancel = onCancel
+    }
+
+    func invalidate() {
+        onCancel()
+    }
+}
+
+private enum BridgeFailure: Error, Equatable, Sendable {
+    case disconnected
+}
+
+@StreamBridgeDefaults(cancel: .tokenMethod, buffering: .bufferingNewest(1))
+private final class PriceTicker: Sendable {
+    private let value: Int
+    private let cancelCount = Mutex(0)
+
+    init(value: Int) {
+        self.value = value
+    }
+
+    @StreamBridge(as: "priceStream", event: .label("handler"))
+    func observePrice(
+        symbol: String,
+        handler: @escaping @Sendable (Int) -> Void
+    ) -> BridgeObservationToken {
+        _ = symbol
+        handler(value)
+        return BridgeObservationToken {
+            self.cancelCount.mutate { count in
+                count += 1
+            }
+        }
+    }
+
+    func cancelledCount() -> Int {
+        cancelCount.value
+    }
+}
+
+@StreamBridgeDefaults(cancel: .tokenMethod, buffering: .bufferingNewest(1))
+private final class SocketBridge: Sendable {
+    private let cancelCount = Mutex(0)
+
+    @StreamBridge(
+        as: "messageStream",
+        event: .label("onMessage"),
+        failure: .label("onError", as: BridgeFailure.self),
+        completion: .label("onClose")
+    )
+    func connect(
+        onMessage: @escaping @Sendable (String) -> Void,
+        onError: @escaping @Sendable (BridgeFailure) -> Void,
+        onClose: @escaping @Sendable () -> Void
+    ) -> BridgeObservationToken {
+        _ = onMessage
+        onError(.disconnected)
+        onClose()
+        return BridgeObservationToken {
+            self.cancelCount.mutate { count in
+                count += 1
+            }
+        }
+    }
+
+    func cancelledCount() -> Int {
+        cancelCount.value
     }
 }

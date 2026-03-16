@@ -83,6 +83,56 @@ public macro SingleFlightClass(
     type: "SingleFlightClassMacro"
 )
 
+/// Generates stream-returning wrapper methods for callback-registration APIs.
+///
+/// - Parameters:
+///   - as: Generated stream wrapper method name.
+///   - event: Callback selector producing stream events.
+///   - failure: Optional callback selector producing stream failures.
+///   - completion: Optional callback selector signaling stream completion.
+///   - cancel: Cancellation strategy used on stream termination.
+///   - buffering: Stream buffering policy.
+///   - safety: Sendability enforcement mode.
+///
+/// - Important: v1 supports nominal type instance methods only. Extension methods are rejected.
+/// - Important: Source methods must be synchronous registration APIs (non-`async`, non-`throws`).
+@attached(body)
+@attached(peer, names: arbitrary)
+public macro StreamBridge(
+    as: StaticString,
+    event: StreamBridgeSelector,
+    failure: StreamBridgeFailureSelector? = nil,
+    completion: StreamBridgeSelector? = nil,
+    cancel: StreamBridgeCancellation = .none,
+    buffering: StreamBridgeBuffering = .unbounded,
+    safety: StreamBridgeSafety = .strict
+) = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "StreamBridgeMacro"
+)
+
+/// Declares default stream-bridge options for methods in a nominal type.
+///
+/// Method-level `@StreamBridge` arguments override these defaults.
+@attached(member, names: arbitrary)
+public macro StreamBridgeDefaults(
+    cancel: StreamBridgeCancellation = .none,
+    buffering: StreamBridgeBuffering = .unbounded,
+    safety: StreamBridgeSafety = .strict
+) = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "StreamBridgeDefaultsMacro"
+)
+
+/// Synthesizes `StreamBridgeTokenCancellable` conformance for token types.
+///
+/// - Parameter cancelMethod: Method invoked by `cancelStreamBridgeToken()`.
+@attached(extension, conformances: StreamBridgeTokenCancellable, names: named(cancelStreamBridgeToken))
+public macro StreamToken(cancelMethod: StaticString) = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "StreamTokenMacro"
+)
+
 /// Runs an async operation with a timeout duration.
 ///
 /// Supports either a trailing closure or an explicit `operation:` argument closure.
