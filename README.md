@@ -37,100 +37,216 @@ Add the library product to your target:
 )
 ```
 
-## Quick Start
+## Why Macros?
 
-Start with these flagship macros in most apps:
+Concurrency bugs usually come from patterns that look simple until every call site has to preserve the same locking, cancellation, deduplication, and ordering rules. `ConcurrencyMacros` keeps those rules explicit while removing the repeated hand-written machinery.
 
-- `@ThreadSafe`: lock-backed mutable state with practical checked `Sendable` adoption for `final` classes.
-- `@SingleFlightActor`: deduplicate in-flight actor work by key.
-- `#withTimeout`: enforce a hard deadline for async operations.
-- `#retrying`: recover from transient failures with explicit retry policy.
-- `#concurrentMap`: run bounded concurrent fan-out while preserving input order.
+### Manually protect shared state with locks every time
+
+```swift
+import os
+
+final class SessionStore: Sendable {
+    private struct State: Sendable {
+        var sessionsByID: [String: Session] = [:]
+        var activeUserID: String?
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    func upsert(_ session: Session) {
+        state.withLock { state in
+            state.sessionsByID[session.id] = session
+        }
+    }
+
+    func session(id: String) -> Session? {
+        state.withLock { state in
+            state.sessionsByID[id]
+        }
+    }
+}
+```
+
+### Use `@ThreadSafe` instead
 
 ```swift
 import ConcurrencyMacros
-import Foundation
-
-struct Avatar: Sendable {
-    let data: Data
-}
-
-protocol AvatarAPI: Sendable {
-    func fetchAvatar(for userID: UUID) async throws -> Avatar
-}
 
 @ThreadSafe
-final class AvatarCache: Sendable {
-    var values: [UUID: Avatar] = [:]
+final class SessionStore: Sendable {
+    var sessionsByID: [String: Session] = [:]
+    var activeUserID: String?
+
+    func upsert(_ session: Session) {
+        inLock { state in
+            state.sessionsByID[session.id] = session
+        }
+    }
+
+    func session(id: String) -> Session? {
+        inLock { state in
+            state.sessionsByID[id]
+        }
+    }
 }
+```
 
-actor AvatarService {
-    private let api: AvatarAPI
-    private let cache = AvatarCache()
+The macro owns the lock-backed state model and keeps mutations going through one generated synchronization path.
 
-    init(api: AvatarAPI) {
+### Manually deduplicate in-flight actor work
+
+```swift
+actor ProfileService {
+    private let api: ProfileAPI
+    private var inFlightProfiles: [User.ID: Task<Profile, Error>] = [:]
+
+    init(api: ProfileAPI) {
         self.api = api
     }
 
-    @SingleFlightActor(key: { (userID: UUID) in userID })
-    func avatar(for userID: UUID) async throws -> Avatar {
-        if let cached = cache.values[userID] {
-            return cached
+    func profile(for userID: User.ID) async throws -> Profile {
+        if let task = inFlightProfiles[userID] {
+            return try await task.value
         }
 
-        let fetched = try await #withTimeout(.seconds(5)) {
-            try await #retrying(
-                max: 2,
-                backoff: .exponential(initial: .milliseconds(200), multiplier: 2, maxDelay: .seconds(2)),
-                jitter: .full
-            ) {
-                try await api.fetchAvatar(for: userID)
-            }
+        let api = self.api
+        let task = Task {
+            try await api.fetchProfile(for: userID)
         }
 
-        cache.values[userID] = fetched
-        return fetched
-    }
-}
+        inFlightProfiles[userID] = task
+        defer { inFlightProfiles[userID] = nil }
 
-func loadAvatars(userIDs: [UUID], service: AvatarService) async throws -> [Avatar] {
-    try await #concurrentMap(userIDs, limit: .fixed(4)) { id in
-        try await service.avatar(for: id)
+        return try await task.value
     }
 }
 ```
 
-### Optional: Stream Bridging Path
-
-If you integrate callback-first SDKs, add `@StreamBridge` as a companion flagship macro:
+### Use `@SingleFlightActor` instead
 
 ```swift
 import ConcurrencyMacros
 
-final class PriceFeedClient: Sendable {
-    @StreamBridge(
-        as: "priceStream",
-        event: .label("handler"),
-        cancel: .ownerMethod("stopObserving"),
-        buffering: .bufferingNewest(32),
-        safety: .strict
-    )
-    func observePrice(
-        symbol: String,
-        handler: @escaping @Sendable (PriceTick) -> Void
-    ) -> ObservationToken {
-        sdk.observePrice(symbol: symbol, handler: handler)
+actor ProfileService {
+    private let api: ProfileAPI
+
+    init(api: ProfileAPI) {
+        self.api = api
     }
 
-    func stopObserving(_ token: ObservationToken) {}
-}
-
-func consume(client: PriceFeedClient) async {
-    for await tick in client.priceStream(symbol: "AAPL") {
-        print(tick)
+    @SingleFlightActor(key: { (userID: User.ID) in userID })
+    func profile(for userID: User.ID) async throws -> Profile {
+        try await api.fetchProfile(for: userID)
     }
 }
 ```
+
+The macro keeps one leader operation per key and lets concurrent callers await the same in-flight result.
+
+### Manually combine timeouts, retries, and backoff
+
+```swift
+struct RequestTimedOut: Error {}
+
+func fetchReceipt(_ request: ReceiptRequest) async throws -> Receipt {
+    var delay = Duration.milliseconds(200)
+
+    for attempt in 0...2 {
+        do {
+            return try await withThrowingTaskGroup(of: Receipt.self) { group in
+                group.addTask {
+                    try await api.fetchReceipt(request)
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(5))
+                    throw RequestTimedOut()
+                }
+
+                let receipt = try await group.next()!
+                group.cancelAll()
+                return receipt
+            }
+        } catch {
+            guard attempt < 2 else { throw error }
+            try await Task.sleep(for: delay)
+            delay = attempt == 0 ? .milliseconds(400) : .seconds(2)
+        }
+    }
+
+    throw CancellationError()
+}
+```
+
+### Use `#withTimeout` and `#retrying` instead
+
+```swift
+import ConcurrencyMacros
+
+let receipt = try await #retrying(
+    max: 2,
+    backoff: .exponential(
+        initial: .milliseconds(200),
+        multiplier: 2,
+        maxDelay: .seconds(2)
+    ),
+    jitter: .full
+) {
+    try await #withTimeout(.seconds(5)) {
+        try await api.fetchReceipt(request)
+    }
+}
+```
+
+The retry policy and per-attempt timeout stay visible at the call site without hand-written control flow around every operation.
+
+### Manually run bounded concurrent work while preserving order
+
+```swift
+struct Metadata: Sendable { ... }
+
+actor MetadataClient {
+    func fetchMetadata(for url: URL) async throws -> Metadata { ... }
+}
+
+func metadata(for urls: [URL], client: MetadataClient) async throws -> [Metadata] {
+    var results = Array<Metadata?>(repeating: nil, count: urls.count)
+    var iterator = urls.enumerated().makeIterator()
+
+    try await withThrowingTaskGroup(of: (Int, Metadata).self) { group in
+        for _ in 0..<min(4, urls.count) {
+            guard let (index, url) = iterator.next() else { break }
+            group.addTask {
+                (index, try await client.fetchMetadata(for: url))
+            }
+        }
+
+        while let (index, metadata) = try await group.next() {
+            results[index] = metadata
+
+            if let (nextIndex, nextURL) = iterator.next() {
+                group.addTask {
+                    (nextIndex, try await client.fetchMetadata(for: nextURL))
+                }
+            }
+        }
+    }
+
+    return results.map { $0! }
+}
+```
+
+### Use `#concurrentMap` instead
+
+```swift
+import ConcurrencyMacros
+
+let metadata = try await #concurrentMap(urls, limit: .fixed(4)) { url in
+    try await client.fetchMetadata(for: url)
+}
+```
+
+The macro handles bounded fan-out, cancellation on failure, and stable output ordering.
 
 ## Macro Index
 
@@ -153,121 +269,71 @@ func consume(client: PriceFeedClient) async {
 
 ## `@ThreadSafe`
 
-### What it does
+### What it replaces
 
-`@ThreadSafe` synthesizes lock-backed internal state and redirects mutable stored-property access through generated accessors.
-It also makes adopting checked `Sendable` on stateful classes more practical by centralizing mutable state behind a synchronized, `Sendable` internal model.
+Manual lock storage, private state containers, and repeated lock accessors for mutable class state.
 
-### When to use
+### Use when
 
-Use it when you need synchronous read/write APIs on shared mutable class state while preserving consistent lock semantics.
-
-<details open><summary>Example</summary>
-
-```swift
-import ConcurrencyMacros
-
-@ThreadSafe
-final class SessionStore {
-    var sessionsByID: [String: Session] = [:]
-    var activeUserID: String?
-
-    func upsert(_ session: Session) {
-        sessionsByID[session.id] = session
-    }
-}
-```
-
-</details>
+Use it for synchronous shared mutable state in `final` classes where callers need normal property or method APIs backed by consistent locking.
 
 ### Safety notes
 
 - Intended for class declarations.
 - When a class has no initializer, each mutable stored property must have a default value.
-- Rewriting is applied to mutable stored properties and designated initializers; convenience initializers are not rewritten.
+- Rewriting applies to mutable stored properties and designated initializers; convenience initializers are not rewritten.
+- Use generated `inLock` for multi-property or read-modify-write operations that must be atomic.
 - The generated state container is lock-backed and `Sendable`.
 
 ## `@SingleFlightActor`
 
-### What it does
+### What it replaces
 
-`@SingleFlightActor` rewrites an actor instance method so concurrent calls with the same key share one in-flight operation.
+Actor-local dictionaries of in-flight `Task` values, cleanup paths, waiter handling, and duplicated cancellation policy decisions.
 
-### When to use
+### Use when
 
-Use it for expensive actor-isolated async operations where duplicate concurrent requests should coalesce.
-
-<details open><summary>Example</summary>
-
-```swift
-import ConcurrencyMacros
-
-actor ProfileService {
-    @SingleFlightActor(key: { (userID: Int) in userID })
-    func profile(userID: Int) async throws -> Profile {
-        try await api.fetchProfile(id: userID)
-    }
-}
-```
-
-</details>
+Use it for expensive actor-isolated async work where concurrent calls with the same key should share one in-flight operation.
 
 ### Safety notes
 
 - Deduplication is in-flight only; results are not cached after completion.
-- Currently supported only on nominal actor instance methods (not extensions, `static`, `class`, or `nonisolated` methods).
-- Method must be `async`; typed throws, generic methods, opaque `some` returns, and unsupported parameter forms (for example `inout`) are rejected.
+- Supported on nominal actor instance methods, not extensions, `static`, `class`, or `nonisolated` methods.
+- The method must be `async`; typed throws, generic methods, opaque `some` returns, and unsupported parameter forms such as `inout` are rejected.
 - `key:` is required and cannot be a string literal.
-- `using:` is optional, but if provided it must reference an existing store value (identifier/member access), not key paths or call expressions.
+- `using:` is optional, but if provided it must reference an existing store value.
 - Generated wrappers enforce `Sendable` for the evaluated key and forwarded parameters.
 
 ## `@SingleFlightClass`
 
-### What it does
+### What it replaces
 
-`@SingleFlightClass` rewrites a class instance method so concurrent calls with the same key share one in-flight operation via an explicit store.
+Hand-written request coalescing in reference-type services that cannot be actors.
 
-### When to use
+### Use when
 
-Use it when request coalescing is needed in reference-type services that cannot be actors.
-
-<details open><summary>Example</summary>
-
-```swift
-import ConcurrencyMacros
-
-final class ProfileService: Sendable {
-    private static let sharedFlights = ThrowingSingleFlightStore<Profile>()
-
-    @SingleFlightClass(key: { (userID: Int) in userID }, using: Self.sharedFlights)
-    func profile(userID: Int) async throws -> Profile {
-        try await api.fetchProfile(id: userID)
-    }
-}
-```
-
-</details>
+Use it when a `final` checked-`Sendable` class needs single-flight behavior around async instance methods.
 
 ### Safety notes
 
 - Deduplication is in-flight only; results are not cached after completion.
-- `using:` is required and must reference an existing store value (identifier/member access).
-- Currently supported only on nominal class instance methods (not extensions, `static`, or `class` methods).
-- Enclosing class must be `final` and explicitly conform to checked `Sendable`; `@unchecked Sendable` is rejected.
+- `using:` is required and must reference an existing store value.
+- Supported on nominal class instance methods, not extensions, `static`, or `class` methods.
+- The enclosing class must be `final` and explicitly conform to checked `Sendable`; `@unchecked Sendable` is rejected.
 - Method must be `async`; typed throws, generic methods, opaque `some` returns, and unsupported parameter forms are rejected.
-- Generated wrappers enforce `Sendable` for `self`, evaluated key, and forwarded parameters.
+- Generated wrappers enforce `Sendable` for `self`, the evaluated key, and forwarded parameters.
 
 ## `@StreamBridge`
 
-### What it does
+### What it replaces
 
-`@StreamBridge` generates a stream-returning wrapper from a callback registration method, producing `AsyncStream` or `AsyncThrowingStream` based on selected callbacks.
+Repeated `AsyncStream` or `AsyncThrowingStream` wrappers around callback-registration APIs, including termination and token-cancellation plumbing.
 
-### When to use
+### Use when
 
-Use it when bridging callback-based SDK observation APIs to structured async stream consumption.
+Use it to expose callback-first SDK observation APIs as structured async streams.
 
-<details open><summary>Example</summary>
+### Example
 
 ```swift
 import ConcurrencyMacros
@@ -291,197 +357,119 @@ final class PriceFeedClient: Sendable {
 }
 ```
 
-</details>
-
 ### Safety notes
 
-- Currently supported on nominal actor/class instance methods only (not extensions, `static`, `class`, or generic methods).
-- Source registration method must be synchronous and non-throwing.
-- Event callback must take exactly one parameter and return `Void`.
-- If configured, failure callback must take one parameter and return `Void`; completion callback must take zero parameters and return `Void`.
+- Supported on nominal actor/class instance methods, not extensions, `static`, `class`, or generic methods.
+- Source registration methods must be synchronous and non-throwing.
+- Event callbacks must take exactly one parameter and return `Void`.
+- Failure callbacks, when configured, must take one parameter and return `Void`; completion callbacks must take zero parameters and return `Void`.
 - Callback selectors must refer to distinct parameters.
 - Under default `.strict` safety, class owners must explicitly conform to checked `Sendable` and selected callbacks must be `@Sendable`.
 - Cancellation strategies other than `.none` require non-`Void` token return types.
 - `.tokenMethod` does not currently support optional token return types.
-- `.ownerMethod` cancellation is not currently supported for actor methods.
+- `.ownerMethod` cancellation is class-only in v1; actor methods must use another cancellation strategy or `.none`.
 
 ## `#withTimeout`
 
-### What it does
+### What it replaces
 
-`#withTimeout` runs an async operation with a deadline and throws on timeout.
+Ad hoc racing between operation tasks and sleep tasks.
 
-### When to use
+### Use when
 
-Use it around operations that must not wait indefinitely (for example network requests or remote IPC calls).
-
-<details open><summary>Example</summary>
-
-```swift
-import ConcurrencyMacros
-
-let payload = try await #withTimeout(.seconds(3)) {
-    try await api.fetchPayload(id: requestID)
-}
-```
-
-</details>
+Use it around async operations that must fail fast if they exceed a deadline.
 
 ### Safety notes
 
-- Invocation requires an unlabeled duration argument as the first parameter.
-- Provide the operation either as trailing closure or `operation:`, but not both.
-- Timeout enforcement is based on structured cancellation. Non-cooperative operations may overrun while cancellation unwinds.
+- The first argument is an unlabeled `Duration`.
+- Provide the operation either as a trailing closure or `operation:`, but not both.
+- Timeout enforcement uses structured cancellation; non-cooperative operations may overrun while cancellation unwinds.
 - Non-positive durations immediately result in timeout at runtime.
 
 ## `#retrying`
 
-### What it does
+### What it replaces
 
-`#retrying` retries an async throwing operation using explicit retry count, backoff, and jitter policy.
+Repeated retry loops, backoff calculations, jitter handling, and final-error propagation.
 
-### When to use
+### Use when
 
 Use it for transient failures where bounded retries improve success rate without hiding persistent errors.
-
-<details open><summary>Example</summary>
-
-```swift
-import ConcurrencyMacros
-
-let receipt = try await #retrying(
-    max: 3,
-    backoff: .exponential(initial: .milliseconds(200), multiplier: 2, maxDelay: .seconds(2)),
-    jitter: .full
-) {
-    try await api.upload(data)
-}
-```
-
-</details>
 
 ### Safety notes
 
 - `max:`, `backoff:`, and `jitter:` are required labeled arguments.
-- Provide the operation either as trailing closure or `operation:`, but not both.
+- Provide the operation either as a trailing closure or `operation:`, but not both.
 - Invalid retry configuration throws `RetryConfigurationError` at runtime.
-- Throwing variant rethrows the last operation error after retry budget is exhausted.
+- After retry budget is exhausted, the operation's last thrown error is rethrown.
 - External cancellation is propagated.
 
 ## `#concurrentMap`
 
-### What it does
+### What it replaces
 
-`#concurrentMap` runs async transforms concurrently with a configurable in-flight limit and preserves input ordering.
+Task-group fan-out code that manually tracks indices, limits in-flight work, preserves order, and cancels remaining work after failure.
 
-### When to use
+### Use when
 
-Use it for batch fetch/transform pipelines where order must match source input.
-
-<details open><summary>Example</summary>
-
-```swift
-import ConcurrencyMacros
-
-let metadata = try await #concurrentMap(urls, limit: .fixed(6)) { url in
-    try await api.fetchMetadata(for: url)
-}
-```
-
-</details>
+Use it for async batch transforms where output order must match input order.
 
 ### Safety notes
 
-- First argument must be the input collection and must be unlabeled.
+- The first argument is the input collection and must be unlabeled.
 - `limit:` uses `ConcurrencyLimit`; `.fixed` is clamped to at least `1`.
 - `.default` resolves to `max(1, activeProcessorCount - 1)`.
 - Output order is stable and matches input order.
-- Throwing transform variant throws the first error and cancels remaining in-flight work.
+- Throwing transforms throw the first error and cancel remaining in-flight work.
 
 ## `#concurrentCompactMap`
 
-### What it does
+### What it replaces
 
-`#concurrentCompactMap` runs async transforms concurrently, drops `nil` results, and preserves ordering among retained elements.
+Concurrent optional transforms plus ordered `nil` filtering.
 
-### When to use
+### Use when
 
-Use it when each input may or may not yield a value, and output should contain only successful non-`nil` results.
-
-<details open><summary>Example</summary>
-
-```swift
-import ConcurrencyMacros
-
-let avatars = try await #concurrentCompactMap(users, limit: .fixed(4)) { user in
-    try await avatarService.fetchAvatar(for: user.id)
-}
-```
-
-</details>
+Use it when each input may produce an optional result and the final output should contain only non-`nil` values.
 
 ### Safety notes
 
 - Uses the same invocation and limit semantics as `#concurrentMap`.
 - `nil` transform outputs are removed from the final array.
-- Throwing transform variant throws the first error and cancels remaining in-flight work.
+- Throwing transforms throw the first error and cancel remaining in-flight work.
 - Ordering of retained values follows input order.
 
 ## `#concurrentFlatMap`
 
-### What it does
+### What it replaces
 
-`#concurrentFlatMap` runs async transforms concurrently where each transform returns a sequence, then flattens segments.
+Concurrent fan-out transforms where each input yields a sequence that must be flattened in stable outer order.
 
-### When to use
+### Use when
 
-Use it when each input fan-outs to multiple outputs and you need a single flattened result.
-
-<details open><summary>Example</summary>
-
-```swift
-import ConcurrencyMacros
-
-let results = try await #concurrentFlatMap(providers, limit: .fixed(3)) { provider in
-    try await provider.search(query: "swift")
-}
-```
-
-</details>
+Use it when each input can produce multiple outputs and callers need a single flattened result.
 
 ### Safety notes
 
 - Uses the same invocation and limit semantics as `#concurrentMap`.
-- Outer ordering is preserved by input element; each returned segment preserves its own internal ordering.
-- Throwing transform variant throws the first error and cancels remaining in-flight work.
+- Outer ordering follows input order; each returned segment preserves its own internal order.
+- Throwing transforms throw the first error and cancel remaining in-flight work.
 
 ## `#concurrentForEach`
 
-### What it does
+### What it replaces
 
-`#concurrentForEach` runs async side-effect operations concurrently with bounded in-flight work and no collected return array.
+Task-group loops for bounded concurrent side effects where no result array is needed.
 
-### When to use
+### Use when
 
-Use it for side-effect workflows such as uploads, invalidations, or fan-out notifications.
-
-<details open><summary>Example</summary>
-
-```swift
-import ConcurrencyMacros
-
-try await #concurrentForEach(files, limit: .fixed(3)) { file in
-    try await uploader.upload(file)
-}
-```
-
-</details>
+Use it for uploads, invalidations, notifications, and other async side-effect workflows.
 
 ### Safety notes
 
 - Uses the same invocation and limit semantics as other concurrent collection macros.
 - No aggregate result is returned.
-- Throwing operation variant throws the first error and cancels remaining in-flight work.
+- Throwing operations throw the first error and cancel remaining in-flight work.
 
 ## Support Macros
 
