@@ -41,7 +41,7 @@ Add the library product to your target:
 
 Concurrency bugs usually come from patterns that look simple until every call site has to preserve the same locking, cancellation, deduplication, and ordering rules. `ConcurrencyMacros` keeps those rules explicit while removing the repeated hand-written machinery.
 
-### Manually protect shared state with locks every time
+### Stop manually protecting shared state with locks every time
 
 ```swift
 import os
@@ -94,7 +94,7 @@ final class SessionStore: Sendable {
 
 The macro owns the lock-backed state model and keeps mutations going through one generated synchronization path.
 
-### Manually deduplicate in-flight actor work
+### Stop hand-rolling in-flight task deduplication
 
 ```swift
 actor ProfileService {
@@ -144,7 +144,7 @@ actor ProfileService {
 
 The macro keeps one leader operation per key and lets concurrent callers await the same in-flight result.
 
-### Manually combine timeouts, retries, and backoff
+### Stop wiring timeout and retry loops by hand
 
 ```swift
 struct RequestTimedOut: Error {}
@@ -200,7 +200,7 @@ let receipt = try await #retrying(
 
 The retry policy and per-attempt timeout stay visible at the call site without hand-written control flow around every operation.
 
-### Manually run bounded concurrent work while preserving order
+### Stop manually coordinating bounded task groups
 
 ```swift
 struct Metadata: Sendable { ... }
