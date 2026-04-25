@@ -43,6 +43,9 @@ Concurrency bugs usually come from patterns that look simple until every call si
 
 ### Stop manually protecting shared state with locks every time
 
+<details>
+<summary>Manual version this replaces</summary>
+
 ```swift
 import os
 
@@ -67,6 +70,8 @@ final class SessionStore: Sendable {
     }
 }
 ```
+
+</details>
 
 ### Use `@ThreadSafe` instead
 
@@ -96,6 +101,9 @@ The macro owns the lock-backed state model and keeps mutations going through one
 
 ### Stop hand-rolling in-flight task deduplication
 
+<details>
+<summary>Manual version this replaces</summary>
+
 ```swift
 actor ProfileService {
     private let api: ProfileAPI
@@ -123,6 +131,8 @@ actor ProfileService {
 }
 ```
 
+</details>
+
 ### Use `@SingleFlightActor` instead
 
 ```swift
@@ -145,6 +155,9 @@ actor ProfileService {
 The macro keeps one leader operation per key and lets concurrent callers await the same in-flight result.
 
 ### Stop wiring timeout and retry loops by hand
+
+<details>
+<summary>Manual version this replaces</summary>
 
 ```swift
 struct RequestTimedOut: Error {}
@@ -178,6 +191,8 @@ func fetchReceipt(_ request: ReceiptRequest) async throws -> Receipt {
 }
 ```
 
+</details>
+
 ### Use `#withTimeout` and `#retrying` instead
 
 ```swift
@@ -201,6 +216,9 @@ let receipt = try await #retrying(
 The retry policy and per-attempt timeout stay visible at the call site without hand-written control flow around every operation.
 
 ### Stop manually coordinating bounded task groups
+
+<details>
+<summary>Manual version this replaces</summary>
 
 ```swift
 struct Metadata: Sendable { ... }
@@ -235,6 +253,8 @@ func metadata(for urls: [URL], client: MetadataClient) async throws -> [Metadata
     return results.map { $0! }
 }
 ```
+
+</details>
 
 ### Use `#concurrentMap` instead
 
