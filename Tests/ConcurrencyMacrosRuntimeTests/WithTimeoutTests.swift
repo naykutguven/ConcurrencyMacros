@@ -27,6 +27,18 @@ struct WithTimeoutTests {
         }
     }
 
+    private actor CancellationProbe {
+        private var didCancel = false
+
+        func markCancelled() {
+            didCancel = true
+        }
+
+        func cancelled() -> Bool {
+            didCancel
+        }
+    }
+
     @Test("Returns value when operation completes before timeout")
     func returnsValueBeforeTimeout() async throws {
         let value = try await ConcurrencyRuntime.withTimeout(.seconds(1)) {
@@ -70,6 +82,35 @@ struct WithTimeoutTests {
         }
 
         #expect(capturedError == .timedOut(after: timeout))
+    }
+
+    @Test("Cancels operation when timeout elapses")
+    func cancelsOperationWhenTimeoutElapses() async {
+        let probe = CancellationProbe()
+
+        do {
+            _ = try await ConcurrencyRuntime.withTimeout(.milliseconds(50)) {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch is CancellationError {
+                    await probe.markCancelled()
+                    throw CancellationError()
+                }
+
+                return 1
+            }
+            Issue.record("Expected timeout error")
+        } catch is ConcurrencyRuntime.TimeoutError {
+            // Expected.
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+
+        await SingleFlightRuntimeTestSupport.waitUntil {
+            await probe.cancelled()
+        }
+
+        #expect(await probe.cancelled())
     }
 
     @Test("Throws immediately for non-positive durations and does not execute operation")

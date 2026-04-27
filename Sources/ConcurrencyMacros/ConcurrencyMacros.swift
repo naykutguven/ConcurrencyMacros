@@ -136,12 +136,15 @@ public macro StreamToken(cancelMethod: StaticString) = #externalMacro(
 /// Runs an async operation with a timeout duration.
 ///
 /// Supports either a trailing closure or an explicit `operation:` argument closure.
-/// - Important: Timeout is enforced via structured cancellation, so non-cancel-cooperative operations
-/// may exceed the requested duration while child tasks unwind.
+/// The operation is transferred into a timeout-managed task, so non-`Sendable` captures are allowed
+/// when the compiler can prove they are not accessed after the call.
+/// - Important: Timeout is enforced by canceling the operation task when the duration elapses.
+///   The timed-out operation is not awaited after cancellation, so if it does not cooperate with
+///   cancellation it may continue running after the timeout is reported.
 @freestanding(expression)
 public macro withTimeout<T: Sendable>(
     _ duration: Duration,
-    operation: @escaping @Sendable () async throws -> T
+    operation: sending @escaping @isolated(any) () async throws -> T
 ) -> T = #externalMacro(
     module: "ConcurrencyMacrosImplementation",
     type: "WithTimeoutMacro"
