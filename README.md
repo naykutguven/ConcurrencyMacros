@@ -10,11 +10,14 @@ The package keeps macro call sites small while routing behavior through explicit
 
 ## Requirements
 
-- Swift 6.2
+- Swift 6.2 or newer
+- Verified with Swift 6.2 and Swift 6.3
 - iOS 17+
 - macOS 14+
 - tvOS 17+
 - watchOS 10+
+
+Future Swift minor releases are supported after the package builds and tests cleanly in CI with a verified SwiftSyntax release line.
 
 ## Installation
 
