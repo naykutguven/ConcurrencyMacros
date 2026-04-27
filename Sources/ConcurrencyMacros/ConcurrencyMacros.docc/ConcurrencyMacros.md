@@ -212,7 +212,8 @@ let payload = try await #withTimeout(.seconds(3)) {
 - Invocation requires an unlabeled duration as the first argument.
 - Operation must be supplied exactly once: trailing closure or `operation:` argument.
 - Additional trailing closures are rejected.
-- Timeout is enforced via structured cancellation; non-cancel-cooperative work may exceed the requested duration while cancellation unwinds.
+- The operation is transferred into a timeout task; non-`Sendable` captures are accepted when they are not used after the call.
+- Timeout is enforced via cooperative cancellation; non-cancel-cooperative work may exceed the requested duration while cancellation unwinds.
 - Non-positive durations fail with timeout at runtime.
 
 ## retrying(max:backoff:jitter:operation:)

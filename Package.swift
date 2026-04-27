@@ -28,7 +28,10 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-syntax", "600.0.0"..<"603.0.0")
     ],
     targets: [
-        .target(name: "ConcurrencyMacrosRuntime"),
+        .target(
+            name: "ConcurrencyMacrosRuntime",
+            swiftSettings: approachableConcurrencySettings
+        ),
         .target(
             name: "ConcurrencyMacros",
             dependencies: [
@@ -42,7 +45,8 @@ let package = Package(
             dependencies: [
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
                 .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
-            ]
+            ],
+            swiftSettings: approachableConcurrencySettings
         ),
         .testTarget(
             name: "ConcurrencyMacrosTests",

@@ -31,6 +31,15 @@ struct ConcurrencyMacrosTests {
             values.count
         }
     }
+
+    private final class NonSendableOperationState {
+        var value: Int
+
+        init(value: Int) {
+            self.value = value
+        }
+    }
+
     @Test("ThreadSafe compiles with a single import")
     func threadSafeCompilesWithSingleImport() {
         let counter = Counter(count: 1)
@@ -58,6 +67,18 @@ struct ConcurrencyMacrosTests {
         let value = try await #withTimeout(.seconds(1), operation: {
             42
         })
+
+        #expect(value == 42)
+    }
+
+    @Test("withTimeout accepts transferred non-Sendable operation captures")
+    func withTimeoutAcceptsTransferredNonSendableOperationCaptures() async throws {
+        let state = NonSendableOperationState(value: 41)
+
+        let value = try await #withTimeout(.seconds(1)) {
+            state.value += 1
+            return state.value
+        }
 
         #expect(value == 42)
     }
