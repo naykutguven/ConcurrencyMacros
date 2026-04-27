@@ -110,7 +110,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
 
         // Set _state once the required properties have been set
         let addedStatement = CodeBlockItemSyntax(
-            stringLiteral: "self._state = Mutex<_State>(_State(\(storedVariables.map { "\($0.key): _\($0.key)" }.joined(separator: ", "))))")
+            stringLiteral: "self._state = ConcurrencyMacros.Mutex<_State>(_State(\(storedVariables.map { "\($0.key): _\($0.key)" }.joined(separator: ", "))))")
         statements.insert(addedStatement, at: lastVariableSetAt + 1)
 
         // Add variables to hold the properties while they are created

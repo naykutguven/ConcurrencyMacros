@@ -379,6 +379,113 @@ struct ConcurrencyMacrosTests {
         #expect(capturedFailure == .disconnected)
         #expect(socket.cancelledCount() == 1)
     }
+
+    @Test("Freestanding macros compile when client shadows runtime namespace")
+    func freestandingMacrosCompileWhenClientShadowsRuntimeNamespace() async throws {
+        let result = try await NamespaceCollisionFixtures.runFreestandingMacros()
+
+        #expect(result.timeout == 42)
+        #expect(result.retry == "ok")
+        #expect(result.mapped == [2, 4, 6])
+        #expect(result.compacted == [2, 4])
+        #expect(result.flattened == [1, 2, 2, 3])
+        #expect(result.forEachCount == 3)
+    }
+
+    @Test("ThreadSafe compiles when client shadows runtime aliases")
+    func threadSafeCompilesWhenClientShadowsRuntimeAliases() {
+        let initialized = NamespaceCollisionFixtures.InitializedCounter(count: 1)
+        initialized.count = 2
+        initialized.label = "next"
+
+        #expect(initialized.count == 2)
+        #expect(initialized.label == "next")
+
+        let defaulted = NamespaceCollisionFixtures.DefaultedCounter()
+        defaulted.count = 4
+
+        #expect(defaulted.count == 4)
+    }
+}
+
+private enum NamespaceCollisionFixtures {
+    enum ConcurrencyRuntime {}
+    enum Mutex<Value: Sendable> {}
+    enum TypeErased<Value> {}
+
+    @ThreadSafe
+    final class InitializedCounter {
+        var count: Int
+        var label = "seed"
+
+        init(count: Int) {
+            self.count = count
+        }
+    }
+
+    @ThreadSafe
+    final class DefaultedCounter {
+        var count: Int = 0
+    }
+
+    actor Collector {
+        private var values: [Int] = []
+
+        func append(_ value: Int) {
+            values.append(value)
+        }
+
+        func count() -> Int {
+            values.count
+        }
+    }
+
+    static func runFreestandingMacros() async throws -> (
+        timeout: Int,
+        retry: String,
+        mapped: [Int],
+        compacted: [Int],
+        flattened: [Int],
+        forEachCount: Int
+    ) {
+        let timeout = try await #withTimeout(.seconds(1)) {
+            42
+        }
+
+        let retry = try await #retrying(
+            max: 0,
+            backoff: .none,
+            jitter: .none
+        ) {
+            "ok"
+        }
+
+        let mapped = await #concurrentMap([1, 2, 3], limit: 2) { value in
+            value * 2
+        }
+
+        let compacted: [Int] = await #concurrentCompactMap([1, 2, 3, 4], limit: 2) { value in
+            value.isMultiple(of: 2) ? value : nil
+        }
+
+        let flattened = await #concurrentFlatMap([1, 2], limit: 2) { value in
+            value..<(value + 2)
+        }
+
+        let collector = Collector()
+        await #concurrentForEach([10, 20, 30], limit: 2) { value in
+            await collector.append(value)
+        }
+
+        return (
+            timeout: timeout,
+            retry: retry,
+            mapped: mapped,
+            compacted: compacted,
+            flattened: flattened,
+            forEachCount: await collector.count()
+        )
+    }
 }
 
 private actor AvatarService {

@@ -29,7 +29,7 @@ struct ConcurrentCompactMapMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == "ConcurrencyRuntime.concurrentCompactMap(users,limit:4){userintryawaitavatarService.fetchAvatar(for:user.id)}"
+                == "ConcurrencyMacros.ConcurrencyRuntime.concurrentCompactMap(users,limit:4){userintryawaitavatarService.fetchAvatar(for:user.id)}"
         )
     }
 
@@ -50,7 +50,7 @@ struct ConcurrentCompactMapMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == "ConcurrencyRuntime.concurrentCompactMap(users,transform:{userinuser.nickname})"
+                == "ConcurrencyMacros.ConcurrencyRuntime.concurrentCompactMap(users,transform:{userinuser.nickname})"
         )
     }
 

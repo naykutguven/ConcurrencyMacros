@@ -29,7 +29,7 @@ struct RetryingMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == "ConcurrencyRuntime.retrying(max:3,backoff:.exponential(initial:.milliseconds(200)),jitter:.full){tryawaitapi.upload(videoData)}"
+                == "ConcurrencyMacros.ConcurrencyRuntime.retrying(max:3,backoff:.exponential(initial:.milliseconds(200)),jitter:.full){tryawaitapi.upload(videoData)}"
         )
     }
 
@@ -50,7 +50,7 @@ struct RetryingMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == "ConcurrencyRuntime.retrying(max:2,backoff:.constant(.milliseconds(25)),jitter:.none,operation:{tryawaitapi.fetchProfile(id:userID)})"
+                == "ConcurrencyMacros.ConcurrencyRuntime.retrying(max:2,backoff:.constant(.milliseconds(25)),jitter:.none,operation:{tryawaitapi.fetchProfile(id:userID)})"
         )
     }
 

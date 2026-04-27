@@ -164,12 +164,12 @@ private enum ConcurrentCollectionMacroExpansion {
             let closureSource = closureArgument.expression.trimmedDescription
             if let limitSource {
                 return ExprSyntax(
-                    stringLiteral: "ConcurrencyRuntime.\(configuration.runtimeFunctionName)(\(inputSource), limit: \(limitSource), \(configuration.closureLabel): \(closureSource))"
+                    stringLiteral: "ConcurrencyMacros.ConcurrencyRuntime.\(configuration.runtimeFunctionName)(\(inputSource), limit: \(limitSource), \(configuration.closureLabel): \(closureSource))"
                 )
             }
 
             return ExprSyntax(
-                stringLiteral: "ConcurrencyRuntime.\(configuration.runtimeFunctionName)(\(inputSource), \(configuration.closureLabel): \(closureSource))"
+                stringLiteral: "ConcurrencyMacros.ConcurrencyRuntime.\(configuration.runtimeFunctionName)(\(inputSource), \(configuration.closureLabel): \(closureSource))"
             )
         }
 
@@ -184,12 +184,12 @@ private enum ConcurrentCollectionMacroExpansion {
 
         if let limitSource {
             return ExprSyntax(
-                stringLiteral: "ConcurrencyRuntime.\(configuration.runtimeFunctionName)(\(inputSource), limit: \(limitSource)) \(trailingClosure.trimmedDescription)"
+                stringLiteral: "ConcurrencyMacros.ConcurrencyRuntime.\(configuration.runtimeFunctionName)(\(inputSource), limit: \(limitSource)) \(trailingClosure.trimmedDescription)"
             )
         }
 
         return ExprSyntax(
-            stringLiteral: "ConcurrencyRuntime.\(configuration.runtimeFunctionName)(\(inputSource)) \(trailingClosure.trimmedDescription)"
+            stringLiteral: "ConcurrencyMacros.ConcurrencyRuntime.\(configuration.runtimeFunctionName)(\(inputSource)) \(trailingClosure.trimmedDescription)"
         )
     }
 }

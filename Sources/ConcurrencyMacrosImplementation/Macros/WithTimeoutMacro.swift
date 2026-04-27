@@ -72,7 +72,7 @@ public struct WithTimeoutMacro: ExpressionMacro {
 
             let operationSource = operationArgument.expression.trimmedDescription
             return ExprSyntax(
-                stringLiteral: "ConcurrencyRuntime.withTimeout(\(durationSource), operation: \(operationSource))"
+                stringLiteral: "ConcurrencyMacros.ConcurrencyRuntime.withTimeout(\(durationSource), operation: \(operationSource))"
             )
         }
 
@@ -85,7 +85,7 @@ public struct WithTimeoutMacro: ExpressionMacro {
         }
 
         return ExprSyntax(
-            stringLiteral: "ConcurrencyRuntime.withTimeout(\(durationSource)) \(trailingClosure.trimmedDescription)"
+            stringLiteral: "ConcurrencyMacros.ConcurrencyRuntime.withTimeout(\(durationSource)) \(trailingClosure.trimmedDescription)"
         )
     }
 }
