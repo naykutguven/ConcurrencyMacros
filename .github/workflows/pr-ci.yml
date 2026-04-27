@@ -115,10 +115,10 @@ jobs:
             .build
             ~/.swiftpm
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-spm-v1-${{ hashFiles('Package.resolved') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-platform-compile-${{ matrix.triple }}-spm-v1-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-spm-
-            ${{ runner.os }}-${{ runner.arch }}-spm-
+            ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-platform-compile-${{ matrix.triple }}-spm-v1-
+            ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-platform-compile-${{ matrix.triple }}-spm-
 
       - name: Compile ${{ matrix.platform }}
         env:
