@@ -9,6 +9,10 @@ let approachableConcurrencySettings: [SwiftSetting] = [
     .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
 ]
 
+/// Keep macro builds on a SwiftSyntax line verified by this package's expression macro tests.
+/// Advance to newer SwiftSyntax minor lines only after compiler-plugin expansion is verified.
+let swiftSyntaxRange = Version(602, 0, 0)..<Version(603, 0, 0)
+
 /// Swift package definition for the ConcurrencyMacros library, plugin, and tests.
 let package = Package(
     name: "ConcurrencyMacros",
@@ -25,7 +29,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-syntax", "600.0.0"..<"603.0.0")
+        .package(url: "https://github.com/swiftlang/swift-syntax", swiftSyntaxRange)
     ],
     targets: [
         .target(
