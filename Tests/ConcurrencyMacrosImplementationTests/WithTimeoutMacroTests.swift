@@ -29,7 +29,7 @@ struct WithTimeoutMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == "ConcurrencyRuntime.withTimeout(.seconds(3)){tryawaitapi.fetchProfile(id:userID)}"
+                == "ConcurrencyMacros.ConcurrencyRuntime.withTimeout(.seconds(3)){tryawaitapi.fetchProfile(id:userID)}"
         )
     }
 
@@ -50,7 +50,7 @@ struct WithTimeoutMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == "ConcurrencyRuntime.withTimeout(.seconds(3),operation:{tryawaitapi.fetchProfile(id:userID)})"
+                == "ConcurrencyMacros.ConcurrencyRuntime.withTimeout(.seconds(3),operation:{tryawaitapi.fetchProfile(id:userID)})"
         )
     }
 

@@ -29,7 +29,7 @@ struct ConcurrentMapMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == "ConcurrencyRuntime.concurrentMap(urls,limit:5){urlintryawaitapi.fetchMetadata(for:url)}"
+                == "ConcurrencyMacros.ConcurrencyRuntime.concurrentMap(urls,limit:5){urlintryawaitapi.fetchMetadata(for:url)}"
         )
     }
 
@@ -50,7 +50,7 @@ struct ConcurrentMapMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == "ConcurrencyRuntime.concurrentMap(urls,limit:2,transform:{urlinurl.absoluteString})"
+                == "ConcurrencyMacros.ConcurrencyRuntime.concurrentMap(urls,limit:2,transform:{urlinurl.absoluteString})"
         )
     }
 

@@ -44,7 +44,7 @@ public struct ThreadSafeMacro: MemberMacro {
                 }
                 return "\(name): \(defaultValue)"
             }
-            let decl = "private let \(Constant.stateName) = Mutex<_State>(_State(\(variables.joined(separator: ", "))))"
+            let decl = "private let \(Constant.stateName) = ConcurrencyMacros.Mutex<_State>(_State(\(variables.joined(separator: ", "))))"
             let stateProperty = DeclSyntax("""
         \(raw: decl)
         """)
@@ -52,7 +52,7 @@ public struct ThreadSafeMacro: MemberMacro {
         } else {
             // Generate _state property
             let stateProperty = DeclSyntax("""
-        private let \(raw: Constant.stateName): Mutex<_State>
+        private let \(raw: Constant.stateName): ConcurrencyMacros.Mutex<_State>
         """)
             members.append(stateProperty)
         }
@@ -126,9 +126,9 @@ extension ThreadSafeMacro: MemberAttributeMacro {
                 if storedVariablesNames.isEmpty { return "[:]" }
                 let arguments = storedVariablesNames.map { key, type, defaultValue in
                     if let defaultValue {
-                        "\"\(key)\": TypeErased<\(type)>(value: \(defaultValue)),"
+                        "\"\(key)\": ConcurrencyMacros.TypeErased<\(type)>(value: \(defaultValue)),"
                     } else {
-                        "\"\(key)\": TypeErased<\(type)>(),"
+                        "\"\(key)\": ConcurrencyMacros.TypeErased<\(type)>(),"
                     }
                 }.joined(separator: "\n")
                 return "[\n\(arguments)\n]"

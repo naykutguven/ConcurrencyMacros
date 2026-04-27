@@ -132,7 +132,7 @@ public struct RetryingMacro: ExpressionMacro {
         if let operationArgument {
             let operationSource = operationArgument.expression.trimmedDescription
             return ExprSyntax(
-                stringLiteral: "ConcurrencyRuntime.retrying(max: \(maxSource), backoff: \(backoffSource), jitter: \(jitterSource), operation: \(operationSource))"
+                stringLiteral: "ConcurrencyMacros.ConcurrencyRuntime.retrying(max: \(maxSource), backoff: \(backoffSource), jitter: \(jitterSource), operation: \(operationSource))"
             )
         }
 
@@ -145,7 +145,7 @@ public struct RetryingMacro: ExpressionMacro {
         }
 
         return ExprSyntax(
-            stringLiteral: "ConcurrencyRuntime.retrying(max: \(maxSource), backoff: \(backoffSource), jitter: \(jitterSource)) \(trailingClosure.trimmedDescription)"
+            stringLiteral: "ConcurrencyMacros.ConcurrencyRuntime.retrying(max: \(maxSource), backoff: \(backoffSource), jitter: \(jitterSource)) \(trailingClosure.trimmedDescription)"
         )
     }
 }

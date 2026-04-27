@@ -60,7 +60,7 @@ struct ThreadSafeMacroTests {
         )
         let output = expanded.nonWhitespaceDescription
 
-        #expect(output.contains("privatelet_state:Mutex<_State>"))
+        #expect(output.contains("privatelet_state:ConcurrencyMacros.Mutex<_State>"))
         #expect(output.contains("privatestruct_State:Sendable{varcount:Intvarname:String}"))
         #expect(output.contains("privatefuncinLock<Result:Sendable>(_mutation:@Sendable(inout_State)->Result)->Result{_state.mutate(mutation)}"))
 
@@ -72,7 +72,7 @@ struct ThreadSafeMacroTests {
         #expect(output.contains("var_count:Int"))
         #expect(output.contains(#"let_name:String="Seed""#))
         #expect(output.contains("_count=count"))
-        #expect(output.contains("self._state=Mutex<_State>(_State(count:_count,name:_name))"))
+        #expect(output.contains("self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))"))
     }
 
     @Test("Generates initialized internal state for classes without initializers")
@@ -92,7 +92,7 @@ struct ThreadSafeMacroTests {
         #expect(expanded.count == 3)
         #expect(
             expanded[0].nonWhitespaceDescription
-                == #"privatelet_state=Mutex<_State>(_State(count:0,name:"Seed",nickname:nil))"#
+                == #"privatelet_state=ConcurrencyMacros.Mutex<_State>(_State(count:0,name:"Seed",nickname:nil))"#
         )
         #expect(expanded[1].nonWhitespaceDescription.contains("privatestruct_State:Sendable"))
         #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
@@ -142,7 +142,7 @@ struct ThreadSafeMacroTests {
         let expanded = try expandMembers(for: declaration)
 
         #expect(expanded.count == 3)
-        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state:Mutex<_State>")
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state:ConcurrencyMacros.Mutex<_State>")
         #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
         #expect(expanded[2].nonWhitespaceDescription.contains("_state.mutate(mutation)"))
     }
@@ -172,7 +172,7 @@ struct ThreadSafeMacroTests {
         let expanded = try expandMembers(for: declaration)
 
         #expect(expanded.count == 3)
-        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=Mutex<_State>(_State())")
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=ConcurrencyMacros.Mutex<_State>(_State())")
         #expect(expanded[1].nonWhitespaceDescription == "privatestruct_State:Sendable{}")
         #expect(expanded[2].nonWhitespaceDescription.contains("privatefuncinLock<Result:Sendable>"))
     }
@@ -250,9 +250,9 @@ struct ThreadSafeMacroTests {
         #expect(attribute.identifierTypeName == "ThreadSafeInitializer")
 
         let argumentExpression = try initializerArgumentExpression(in: attribute)
-        #expect(argumentExpression.contains(#""required":TypeErased<Int>()"#))
-        #expect(argumentExpression.contains(#""optional":TypeErased<String?>(value:nil)"#))
-        #expect(argumentExpression.contains(#""name":TypeErased<String>(value:"Seed")"#))
+        #expect(argumentExpression.contains(#""required":ConcurrencyMacros.TypeErased<Int>()"#))
+        #expect(argumentExpression.contains(#""optional":ConcurrencyMacros.TypeErased<String?>(value:nil)"#))
+        #expect(argumentExpression.contains(#""name":ConcurrencyMacros.TypeErased<String>(value:"Seed")"#))
     }
 
     @Test("Uses empty dictionary argument when class has no mutable stored properties")

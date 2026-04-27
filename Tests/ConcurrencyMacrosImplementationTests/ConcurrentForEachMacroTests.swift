@@ -29,7 +29,7 @@ struct ConcurrentForEachMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == "ConcurrencyRuntime.concurrentForEach(items,limit:2){itemintryawaituploader.upload(item)}"
+                == "ConcurrencyMacros.ConcurrencyRuntime.concurrentForEach(items,limit:2){itemintryawaituploader.upload(item)}"
         )
     }
 
@@ -50,7 +50,7 @@ struct ConcurrentForEachMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == "ConcurrencyRuntime.concurrentForEach(items,operation:{iteminawaitsink.push(item)})"
+                == "ConcurrencyMacros.ConcurrencyRuntime.concurrentForEach(items,operation:{iteminawaitsink.push(item)})"
         )
     }
 

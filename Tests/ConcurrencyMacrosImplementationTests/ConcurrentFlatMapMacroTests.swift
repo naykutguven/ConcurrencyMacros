@@ -29,7 +29,7 @@ struct ConcurrentFlatMapMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == #"ConcurrencyRuntime.concurrentFlatMap(providers,limit:3){providerintryawaitprovider.search(query:"swift")}"#
+                == #"ConcurrencyMacros.ConcurrencyRuntime.concurrentFlatMap(providers,limit:3){providerintryawaitprovider.search(query:"swift")}"#
         )
     }
 
@@ -50,7 +50,7 @@ struct ConcurrentFlatMapMacroTests {
 
         #expect(
             expanded.nonWhitespaceDescription
-                == "ConcurrencyRuntime.concurrentFlatMap(providers,transform:{providerinprovider.cachedResults})"
+                == "ConcurrencyMacros.ConcurrencyRuntime.concurrentFlatMap(providers,transform:{providerinprovider.cachedResults})"
         )
     }
 

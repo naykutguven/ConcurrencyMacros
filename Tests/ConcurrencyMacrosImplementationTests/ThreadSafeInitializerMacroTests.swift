@@ -105,7 +105,7 @@ struct ThreadSafeInitializerMacroTests {
                 "_first=first",
                 "_optionalThird=optionalThird",
                 "_second=second+1",
-                "self._state=Mutex<_State>(_State(first:_first,second:_second,optionalThird:_optionalThird))",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(first:_first,second:_second,optionalThird:_optionalThird))",
                 "print(second)",
             ]
         )
@@ -132,7 +132,7 @@ struct ThreadSafeInitializerMacroTests {
             expanded.map(\.nonWhitespaceDescription) == [
                 "let_id:Int",
                 #"let_name:String="Anonymous""#,
-                "self._state=Mutex<_State>(_State(id:_id,name:_name))",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(id:_id,name:_name))",
                 "print(id)",
             ]
         )
@@ -157,7 +157,7 @@ struct ThreadSafeInitializerMacroTests {
 
         #expect(
             expanded.map(\.nonWhitespaceDescription) == [
-                "self._state=Mutex<_State>(_State())",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State())",
                 "print(value)",
             ]
         )
@@ -182,7 +182,7 @@ struct ThreadSafeInitializerMacroTests {
 
         #expect(
             expanded.map(\.nonWhitespaceDescription) == [
-                "self._state=Mutex<_State>(_State())",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State())",
                 "self.count=count",
             ]
         )
