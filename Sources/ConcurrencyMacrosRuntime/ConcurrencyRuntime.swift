@@ -137,8 +137,9 @@ public enum ConcurrencyRuntime {
     /// - Returns: The operation result when it completes within `duration`.
     /// - Throws: `TimeoutError` when the timeout elapses, operation-thrown errors, or external cancellation.
     ///
-    /// - Important: This helper uses cooperative cancellation. If the operation does not cooperate with cancellation,
-    /// completion may exceed the requested timeout while tasks unwind.
+    /// - Important: This helper uses cooperative cancellation. When the timeout elapses, this function can return
+    /// immediately by throwing ``TimeoutError``. The operation task is cancelled but not awaited, so if the
+    /// operation does not cooperate with cancellation it may continue running in the background after timeout.
     public static func withTimeout<T: Sendable>(
         _ duration: Duration,
         operation: sending @escaping @isolated(any) () async throws -> T

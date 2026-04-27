@@ -404,7 +404,7 @@ Use it around async operations that must fail fast if they exceed a deadline.
 - The first argument is an unlabeled `Duration`.
 - Provide the operation either as a trailing closure or `operation:`, but not both.
 - The operation is transferred into a timeout task; non-`Sendable` captures are accepted when they are not used after the call.
-- Timeout enforcement uses cooperative cancellation; non-cooperative operations may overrun while cancellation unwinds.
+- Timeout enforcement requests cooperative cancellation at the deadline; non-cooperative operations may continue running after the timeout error is thrown.
 - Non-positive durations immediately result in timeout at runtime.
 
 ## `#retrying`

@@ -138,8 +138,9 @@ public macro StreamToken(cancelMethod: StaticString) = #externalMacro(
 /// Supports either a trailing closure or an explicit `operation:` argument closure.
 /// The operation is transferred into a timeout-managed task, so non-`Sendable` captures are allowed
 /// when the compiler can prove they are not accessed after the call.
-/// - Important: Timeout is enforced via cooperative cancellation, so non-cancel-cooperative operations
-/// may exceed the requested duration while tasks unwind.
+/// - Important: Timeout is enforced by canceling the operation task when the duration elapses.
+///   The timed-out operation is not awaited after cancellation, so if it does not cooperate with
+///   cancellation it may continue running after the timeout is reported.
 @freestanding(expression)
 public macro withTimeout<T: Sendable>(
     _ duration: Duration,

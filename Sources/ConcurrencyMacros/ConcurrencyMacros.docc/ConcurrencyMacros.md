@@ -213,7 +213,7 @@ let payload = try await #withTimeout(.seconds(3)) {
 - Operation must be supplied exactly once: trailing closure or `operation:` argument.
 - Additional trailing closures are rejected.
 - The operation is transferred into a timeout task; non-`Sendable` captures are accepted when they are not used after the call.
-- Timeout is enforced via cooperative cancellation; non-cancel-cooperative work may exceed the requested duration while cancellation unwinds.
+- Timeout is enforced by requesting cooperative cancellation; `withTimeout` throws the timeout error without awaiting the operation task's completion, and non-cancel-cooperative work may continue running after the timeout error is thrown.
 - Non-positive durations fail with timeout at runtime.
 
 ## retrying(max:backoff:jitter:operation:)
