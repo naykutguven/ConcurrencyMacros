@@ -65,3 +65,63 @@ jobs:
         run: |
           set -euo pipefail
           swift test -c release
+
+  platform-compile:
+    name: Platform Compile (${{ matrix.platform }})
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: iOS 17
+            sdk: iphonesimulator
+            triple: arm64-apple-ios17.0-simulator
+          - platform: macOS 14
+            sdk: macosx
+            triple: arm64-apple-macosx14.0
+          - platform: tvOS 17
+            sdk: appletvsimulator
+            triple: arm64-apple-tvos17.0-simulator
+          - platform: watchOS 10
+            sdk: watchsimulator
+            triple: arm64-apple-watchos10.0-simulator
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Select Xcode 26.3
+        run: |
+          set -euo pipefail
+
+          if [[ ! -d "${XCODE_DEVELOPER_DIR}" ]]; then
+            echo "Expected Xcode not found at ${XCODE_DEVELOPER_DIR}" >&2
+            exit 1
+          fi
+
+          export DEVELOPER_DIR="${XCODE_DEVELOPER_DIR}"
+          echo "DEVELOPER_DIR=${DEVELOPER_DIR}" >> "${GITHUB_ENV}"
+          echo "Selected Xcode: ${DEVELOPER_DIR}"
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@v5
+        with:
+          path: |
+            .build
+            ~/.swiftpm
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-spm-v1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-spm-
+            ${{ runner.os }}-${{ runner.arch }}-spm-
+
+      - name: Compile ${{ matrix.platform }}
+        env:
+          SDK: ${{ matrix.sdk }}
+          TRIPLE: ${{ matrix.triple }}
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk "${SDK}" --show-sdk-path)"
+          swift build --triple "${TRIPLE}" --sdk "${SDK_PATH}"
