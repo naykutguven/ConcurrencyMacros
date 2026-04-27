@@ -12,9 +12,6 @@ on:
 permissions:
   contents: read
 
-env:
-  XCODE_DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
-
 defaults:
   run:
     shell: bash
@@ -25,14 +22,24 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Build and Test
+    name: Build and Test (${{ matrix.swift }})
     runs-on: macos-15
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - swift: "6.2"
+            xcode: /Applications/Xcode_26.3.app/Contents/Developer
+          - swift: "6.3"
+            xcode: /Applications/Xcode_26.4.1.app/Contents/Developer
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Select Xcode 26.3
+      - name: Select Swift ${{ matrix.swift }}
+        env:
+          XCODE_DEVELOPER_DIR: ${{ matrix.xcode }}
         run: |
           set -euo pipefail
 
@@ -54,9 +61,9 @@ jobs:
             .build
             ~/.swiftpm
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-spm-v1-${{ hashFiles('Package.resolved') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-swift-${{ matrix.swift }}-spm-v1-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-spm-
+            ${{ runner.os }}-${{ runner.arch }}-swift-${{ matrix.swift }}-spm-
             ${{ runner.os }}-${{ runner.arch }}-spm-
 
       - name: Build
@@ -70,9 +77,11 @@ jobs:
           swift test
 
   platform-compile:
-    name: Platform Compile (${{ matrix.platform }})
+    name: Platform Compile (${{ matrix.platform }}, Swift 6.3)
     runs-on: macos-15
     timeout-minutes: 30
+    env:
+      XCODE_DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
     strategy:
       fail-fast: false
       matrix:
@@ -93,7 +102,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Select Xcode 26.3
+      - name: Select Swift 6.3
         run: |
           set -euo pipefail
 
@@ -115,10 +124,10 @@ jobs:
             .build
             ~/.swiftpm
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-platform-compile-${{ matrix.triple }}-spm-v1-${{ hashFiles('Package.resolved') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-swift-6.3-platform-compile-${{ matrix.triple }}-spm-v1-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-platform-compile-${{ matrix.triple }}-spm-v1-
-            ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-platform-compile-${{ matrix.triple }}-spm-
+            ${{ runner.os }}-${{ runner.arch }}-swift-6.3-platform-compile-${{ matrix.triple }}-spm-v1-
+            ${{ runner.os }}-${{ runner.arch }}-swift-6.3-platform-compile-${{ matrix.triple }}-spm-
 
       - name: Compile ${{ matrix.platform }}
         env:
@@ -130,15 +139,17 @@ jobs:
           swift build --triple "${TRIPLE}" --sdk "${SDK_PATH}"
 
   release-smoke:
-    name: Release Smoke
+    name: Release Smoke (Swift 6.3)
     needs: build-and-test
     runs-on: macos-15
     timeout-minutes: 30
+    env:
+      XCODE_DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Select Xcode 26.3
+      - name: Select Swift 6.3
         run: |
           set -euo pipefail
 
@@ -160,9 +171,9 @@ jobs:
             .build
             ~/.swiftpm
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-spm-v1-${{ hashFiles('Package.resolved') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-swift-6.3-spm-v1-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-spm-
+            ${{ runner.os }}-${{ runner.arch }}-swift-6.3-spm-
             ${{ runner.os }}-${{ runner.arch }}-spm-
 
       - name: Release build smoke check
