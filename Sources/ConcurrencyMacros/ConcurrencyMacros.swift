@@ -136,6 +136,8 @@ public macro StreamToken(cancelMethod: StaticString) = #externalMacro(
 /// Runs an async operation with a timeout duration.
 ///
 /// Supports either a trailing closure or an explicit `operation:` argument closure.
+/// Use the unlabeled `Duration` form for relative timeouts, or `until:` for an absolute
+/// `ContinuousClock.Instant` deadline.
 /// The operation is transferred into a timeout-managed task, so non-`Sendable` captures are allowed
 /// when the compiler can prove they are not accessed after the call.
 /// - Important: Timeout is enforced by canceling the operation task when the duration elapses.
@@ -144,6 +146,45 @@ public macro StreamToken(cancelMethod: StaticString) = #externalMacro(
 @freestanding(expression)
 public macro withTimeout<T: Sendable>(
     _ duration: Duration,
+    tolerance: Duration? = nil,
+    operation: sending @escaping @isolated(any) () async throws -> T
+) -> T = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "WithTimeoutMacro"
+)
+
+/// Runs an async operation with a timeout duration measured by `clock`.
+@freestanding(expression)
+public macro withTimeout<T: Sendable, C: Clock>(
+    _ duration: Duration,
+    tolerance: Duration? = nil,
+    clock: C,
+    operation: sending @escaping @isolated(any) () async throws -> T
+) -> T = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "WithTimeoutMacro"
+)
+
+/// Runs an async operation with an absolute continuous-clock timeout deadline.
+///
+/// This keeps `#withTimeout` fail-fast behavior while allowing callers to compute one deadline
+/// and pass it through nested operations without accumulating duration drift.
+@freestanding(expression)
+public macro withTimeout<T: Sendable>(
+    until deadline: ContinuousClock.Instant,
+    tolerance: Duration? = nil,
+    operation: sending @escaping @isolated(any) () async throws -> T
+) -> T = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "WithTimeoutMacro"
+)
+
+/// Runs an async operation with an absolute timeout deadline interpreted by `clock`.
+@freestanding(expression)
+public macro withTimeout<T: Sendable, C: Clock>(
+    until deadline: C.Instant,
+    tolerance: Duration? = nil,
+    clock: C,
     operation: sending @escaping @isolated(any) () async throws -> T
 ) -> T = #externalMacro(
     module: "ConcurrencyMacrosImplementation",

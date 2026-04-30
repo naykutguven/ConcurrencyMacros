@@ -8,11 +8,16 @@
 /// Namespace for runtime helpers used by freestanding concurrency macros.
 public enum ConcurrencyRuntime {
     /// Error thrown when a timeout duration elapses before the operation completes.
-    public enum TimeoutError: Error, Sendable, Equatable {
+    public enum TimeoutError: Error, Sendable {
         /// Indicates the operation did not complete before the timeout expired.
         ///
         /// - Parameter after: The timeout duration that elapsed.
         case timedOut(after: Duration)
+
+        /// Indicates the operation did not complete before the absolute deadline expired.
+        ///
+        /// - Parameter until: The deadline instant that expired.
+        case deadlineExceeded(until: any InstantProtocol & Sendable)
     }
 
     /// Error thrown when retry configuration is invalid.
@@ -133,6 +138,7 @@ public enum ConcurrencyRuntime {
     ///
     /// - Parameters:
     ///   - duration: Maximum time allowed for the operation to complete.
+    ///   - tolerance: Optional tolerance used when sleeping until the timeout deadline.
     ///   - operation: Async operation transferred into a timeout-managed task.
     /// - Returns: The operation result when it completes within `duration`.
     /// - Throws: `TimeoutError` when the timeout elapses, operation-thrown errors, or external cancellation.
@@ -142,34 +148,153 @@ public enum ConcurrencyRuntime {
     /// operation does not cooperate with cancellation it may continue running in the background after timeout.
     public static func withTimeout<T: Sendable>(
         _ duration: Duration,
+        tolerance: Duration? = nil,
         operation: sending @escaping @isolated(any) () async throws -> T
     ) async throws -> T {
+        try await withTimeout(
+            duration,
+            tolerance: tolerance,
+            clock: ContinuousClock(),
+            operation: operation
+        )
+    }
+
+    /// Executes `operation` and fails if it does not complete before `duration` expires on `clock`.
+    ///
+    /// - Parameters:
+    ///   - duration: Maximum time allowed for the operation to complete.
+    ///   - tolerance: Optional tolerance used when sleeping until the timeout deadline.
+    ///   - clock: Clock used to compute and sleep until the timeout deadline.
+    ///   - operation: Async operation transferred into a timeout-managed task.
+    /// - Returns: The operation result when it completes within `duration`.
+    /// - Throws: `TimeoutError` when the timeout elapses, operation-thrown errors, or external cancellation.
+    ///
+    /// - Important: This helper preserves `withTimeout` fail-fast semantics: the operation task is cancelled
+    /// but not awaited after timeout expiry.
+    public static func withTimeout<T: Sendable, C: Clock>(
+        _ duration: Duration,
+        tolerance: Duration? = nil,
+        clock: C,
+        operation: sending @escaping @isolated(any) () async throws -> T
+    ) async throws -> T where C.Instant.Duration == Duration {
         guard duration > .zero else {
             throw TimeoutError.timedOut(after: duration)
         }
 
+        return try await timeoutRace(
+            until: clock.now.advanced(by: duration),
+            tolerance: tolerance,
+            clock: clock,
+            timeoutError: .timedOut(after: duration),
+            operation: operation
+        )
+    }
+
+    /// Executes `operation` and fails if it does not complete before `deadline`.
+    ///
+    /// - Parameters:
+    ///   - deadline: Absolute continuous-clock instant by which the operation must complete.
+    ///   - tolerance: Optional tolerance used when sleeping until `deadline`.
+    ///   - operation: Async operation transferred into a timeout-managed task.
+    /// - Returns: The operation result when it completes before `deadline`.
+    /// - Throws: `TimeoutError` when the deadline elapses, operation-thrown errors, or external cancellation.
+    ///
+    /// - Important: Unlike Swift Evolution proposal SE-0526's `withDeadline`, this helper preserves
+    /// `withTimeout` fail-fast semantics: the operation task is cancelled but not awaited after deadline expiry.
+    public static func withTimeout<T: Sendable>(
+        until deadline: ContinuousClock.Instant,
+        tolerance: Duration? = nil,
+        operation: sending @escaping @isolated(any) () async throws -> T
+    ) async throws -> T {
+        let clock = ContinuousClock()
+        guard deadline > clock.now else {
+            throw TimeoutError.deadlineExceeded(until: deadline)
+        }
+
+        return try await timeoutRace(
+            until: deadline,
+            tolerance: tolerance,
+            clock: clock,
+            timeoutError: .deadlineExceeded(until: deadline),
+            operation: operation
+        )
+    }
+
+    /// Executes `operation` and fails if it does not complete before `deadline` on `clock`.
+    ///
+    /// - Parameters:
+    ///   - deadline: Absolute clock instant by which the operation must complete.
+    ///   - tolerance: Optional tolerance used when sleeping until `deadline`.
+    ///   - clock: Clock used to interpret `deadline`.
+    ///   - operation: Async operation transferred into a timeout-managed task.
+    /// - Returns: The operation result when it completes before `deadline`.
+    /// - Throws: `TimeoutError` when the deadline elapses, operation-thrown errors, or external cancellation.
+    ///
+    /// - Important: This helper preserves `withTimeout` fail-fast semantics: the operation task is cancelled
+    /// but not awaited after deadline expiry.
+    public static func withTimeout<T: Sendable, C: Clock>(
+        until deadline: C.Instant,
+        tolerance: Duration? = nil,
+        clock: C,
+        operation: sending @escaping @isolated(any) () async throws -> T
+    ) async throws -> T where C.Instant.Duration == Duration {
+        guard clock.now.duration(to: deadline) > .zero else {
+            throw TimeoutError.deadlineExceeded(until: deadline)
+        }
+
+        return try await timeoutRace(
+            until: deadline,
+            tolerance: tolerance,
+            clock: clock,
+            timeoutError: .deadlineExceeded(until: deadline),
+            operation: operation
+        )
+    }
+
+    private static func timeoutRace<T: Sendable, C: Clock>(
+        until deadline: C.Instant,
+        tolerance: Duration?,
+        clock: C,
+        timeoutError: TimeoutError,
+        operation: sending @escaping @isolated(any) () async throws -> T
+    ) async throws -> T where C.Instant.Duration == Duration {
+        // A task group would await losing children at scope exit, which breaks
+        // the timeout contract for non-cancellation-cooperative operations.
         let operationTask = Task(operation: operation)
 
-        return try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask {
-                try await operationTask.value
-            }
-            group.addTask {
-                try await ContinuousClock().sleep(for: duration)
-                throw TimeoutError.timedOut(after: duration)
+        let results = AsyncThrowingStream<T, any Error> { continuation in
+            let operationWaiter = Task {
+                do {
+                    continuation.yield(try await operationTask.value)
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
             }
 
-            defer {
-                group.cancelAll()
+            let timeoutTask = Task {
+                do {
+                    try await clock.sleep(until: deadline, tolerance: tolerance)
+                } catch {
+                    return
+                }
+
+                continuation.finish(throwing: timeoutError)
                 operationTask.cancel()
             }
 
-            guard let firstResult = try await group.next() else {
-                throw CancellationError()
+            continuation.onTermination = { @Sendable _ in
+                operationWaiter.cancel()
+                timeoutTask.cancel()
+                operationTask.cancel()
             }
-
-            return firstResult
         }
+
+        var iterator = results.makeAsyncIterator()
+        guard let result = try await iterator.next() else {
+            throw CancellationError()
+        }
+        return result
     }
 
     /// Concurrently transforms elements of a collection while preserving input order.

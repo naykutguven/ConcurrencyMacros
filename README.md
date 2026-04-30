@@ -404,10 +404,13 @@ Use it around async operations that must fail fast if they exceed a deadline.
 
 ### Safety notes
 
-- The first argument is an unlabeled `Duration`.
+- The first argument is either an unlabeled `Duration` or an `until:` `ContinuousClock.Instant` deadline.
+- Use `until:` when nested operations should share one absolute deadline instead of accumulating duration drift.
+- Pass `clock:` to interpret relative timeouts or absolute deadlines with a custom `Clock`.
 - Provide the operation either as a trailing closure or `operation:`, but not both.
 - The operation is transferred into a timeout task; non-`Sendable` captures are accepted when they are not used after the call.
 - Timeout enforcement requests cooperative cancellation at the deadline; non-cooperative operations may continue running after the timeout error is thrown.
+- This differs from Swift Evolution proposal SE-0526's `withDeadline`, which cancels and then waits for the operation to return.
 - Non-positive durations immediately result in timeout at runtime.
 
 ## `#retrying`

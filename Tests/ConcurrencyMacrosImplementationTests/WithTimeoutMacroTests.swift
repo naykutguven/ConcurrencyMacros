@@ -54,6 +54,90 @@ struct WithTimeoutMacroTests {
         )
     }
 
+    @Test("Expands absolute-deadline trailing-closure invocation to runtime helper call")
+    func expandsAbsoluteDeadlineTrailingClosureInvocation() throws {
+        let macroExpression = try TestSupport.parseMacroExpression(
+            """
+            #withTimeout(until: deadline) {
+                try await api.fetchProfile(id: userID)
+            }
+            """
+        )
+
+        let expanded = try WithTimeoutMacro.expansion(
+            of: macroExpression,
+            in: BasicMacroExpansionContext()
+        )
+
+        #expect(
+            expanded.nonWhitespaceDescription
+                == "ConcurrencyMacros.ConcurrencyRuntime.withTimeout(until:deadline){tryawaitapi.fetchProfile(id:userID)}"
+        )
+    }
+
+    @Test("Expands tolerance argument to runtime helper call")
+    func expandsToleranceArgument() throws {
+        let macroExpression = try TestSupport.parseMacroExpression(
+            """
+            #withTimeout(until: deadline, tolerance: .milliseconds(5), operation: {
+                try await api.fetchProfile(id: userID)
+            })
+            """
+        )
+
+        let expanded = try WithTimeoutMacro.expansion(
+            of: macroExpression,
+            in: BasicMacroExpansionContext()
+        )
+
+        #expect(
+            expanded.nonWhitespaceDescription
+                == "ConcurrencyMacros.ConcurrencyRuntime.withTimeout(until:deadline,tolerance:.milliseconds(5),operation:{tryawaitapi.fetchProfile(id:userID)})"
+        )
+    }
+
+    @Test("Expands custom clock argument to runtime helper call")
+    func expandsCustomClockArgument() throws {
+        let macroExpression = try TestSupport.parseMacroExpression(
+            """
+            #withTimeout(until: deadline, tolerance: .milliseconds(5), clock: clock) {
+                try await api.fetchProfile(id: userID)
+            }
+            """
+        )
+
+        let expanded = try WithTimeoutMacro.expansion(
+            of: macroExpression,
+            in: BasicMacroExpansionContext()
+        )
+
+        #expect(
+            expanded.nonWhitespaceDescription
+                == "ConcurrencyMacros.ConcurrencyRuntime.withTimeout(until:deadline,tolerance:.milliseconds(5),clock:clock){tryawaitapi.fetchProfile(id:userID)}"
+        )
+    }
+
+    @Test("Expands duration, tolerance, clock, and operation arguments to runtime helper call")
+    func expandsDurationToleranceClockAndOperationArguments() throws {
+        let macroExpression = try TestSupport.parseMacroExpression(
+            """
+            #withTimeout(.seconds(3), tolerance: .milliseconds(5), clock: clock, operation: {
+                try await api.fetchProfile(id: userID)
+            })
+            """
+        )
+
+        let expanded = try WithTimeoutMacro.expansion(
+            of: macroExpression,
+            in: BasicMacroExpansionContext()
+        )
+
+        #expect(
+            expanded.nonWhitespaceDescription
+                == "ConcurrencyMacros.ConcurrencyRuntime.withTimeout(.seconds(3),tolerance:.milliseconds(5),clock:clock,operation:{tryawaitapi.fetchProfile(id:userID)})"
+        )
+    }
+
     @Test("Throws diagnostic when duration argument is missing")
     func throwsDiagnosticWhenDurationArgumentIsMissing() throws {
         let macroExpression = try TestSupport.parseMacroExpression(
@@ -66,7 +150,7 @@ struct WithTimeoutMacroTests {
 
         TestSupport.assertDiagnosticsError(
             from: macroExpression,
-            expectedMessage: "'#withTimeout' requires a duration as its first argument.",
+            expectedMessage: "'#withTimeout' requires a duration or deadline as its first argument.",
             expectedID: MessageID(domain: "WithTimeoutMacro", id: "missingDurationArgument"),
             expand: { expression in
                 try WithTimeoutMacro.expansion(
@@ -89,8 +173,8 @@ struct WithTimeoutMacroTests {
 
         TestSupport.assertDiagnosticsError(
             from: macroExpression,
-            expectedMessage: "'#withTimeout' duration argument must be unlabeled.",
-            expectedID: MessageID(domain: "WithTimeoutMacro", id: "durationMustBeUnlabeled"),
+            expectedMessage: "'#withTimeout' first argument must be an unlabeled duration or 'until:' deadline.",
+            expectedID: MessageID(domain: "WithTimeoutMacro", id: "invalidFirstArgumentLabel"),
             expand: { expression in
                 try WithTimeoutMacro.expansion(
                     of: expression,
@@ -104,13 +188,13 @@ struct WithTimeoutMacroTests {
     func throwsDiagnosticWhenTooManyArgumentsAreProvided() throws {
         let macroExpression = try TestSupport.parseMacroExpression(
             """
-            #withTimeout(.seconds(1), operation: { 1 }, operation: { 2 })
+            #withTimeout(.seconds(1), tolerance: .milliseconds(5), clock: clock, operation: { 1 }, operation: { 2 })
             """
         )
 
         TestSupport.assertDiagnosticsError(
             from: macroExpression,
-            expectedMessage: "'#withTimeout' accepts at most one duration and one 'operation' argument.",
+            expectedMessage: "'#withTimeout' accepts at most one timeout/deadline, one 'tolerance:', one 'clock:', and one 'operation:' argument.",
             expectedID: MessageID(domain: "WithTimeoutMacro", id: "tooManyArguments"),
             expand: { expression in
                 try WithTimeoutMacro.expansion(
@@ -158,8 +242,8 @@ struct WithTimeoutMacroTests {
 
         TestSupport.assertDiagnosticsError(
             from: macroExpression,
-            expectedMessage: "'#withTimeout' second argument must be labeled 'operation:'.",
-            expectedID: MessageID(domain: "WithTimeoutMacro", id: "invalidOperationArgumentLabel"),
+            expectedMessage: "'#withTimeout' arguments after the first must be labeled 'tolerance:', 'clock:', or 'operation:'.",
+            expectedID: MessageID(domain: "WithTimeoutMacro", id: "invalidArgumentLabel"),
             expand: { expression in
                 try WithTimeoutMacro.expansion(
                     of: expression,

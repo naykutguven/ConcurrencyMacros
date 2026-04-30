@@ -71,6 +71,32 @@ struct ConcurrencyMacrosTests {
         #expect(value == 42)
     }
 
+    @Test("withTimeout supports absolute deadline form")
+    func withTimeoutSupportsAbsoluteDeadlineForm() async throws {
+        let clock = ContinuousClock()
+        let value = try await #withTimeout(
+            until: clock.now.advanced(by: .seconds(1)),
+            tolerance: .milliseconds(5)
+        ) {
+            42
+        }
+
+        #expect(value == 42)
+    }
+
+    @Test("withTimeout supports explicit clock form")
+    func withTimeoutSupportsExplicitClockForm() async throws {
+        let clock = ContinuousClock()
+        let value = try await #withTimeout(
+            until: clock.now.advanced(by: .seconds(1)),
+            clock: clock
+        ) {
+            42
+        }
+
+        #expect(value == 42)
+    }
+
     @Test("withTimeout accepts transferred non-Sendable operation captures")
     func withTimeoutAcceptsTransferredNonSendableOperationCaptures() async throws {
         let state = NonSendableOperationState(value: 41)
@@ -94,7 +120,11 @@ struct ConcurrencyMacrosTests {
             }
             Issue.record("Expected timeout error")
         } catch let error as TimeoutError {
-            #expect(error == .timedOut(after: timeout))
+            guard case .timedOut(let duration) = error else {
+                Issue.record("Expected timedOut error, got \(error)")
+                return
+            }
+            #expect(duration == timeout)
         } catch {
             Issue.record("Unexpected error type: \(error)")
         }
