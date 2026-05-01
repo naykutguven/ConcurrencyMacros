@@ -57,9 +57,10 @@ public final class Mutex<Value: Sendable>: Sendable {
     ///   - newValue: The replacement member value.
     /// - Returns: The member value before replacement.
     public func set<T: Sendable>(_ keyPath: WritableKeyPath<Value, T>, to newValue: T) -> T {
-        lock.withLock { value in
-            let oldValue = value[keyPath: keyPath]
-            value[keyPath: keyPath] = newValue
+        let sendableKeyPath = SendableWritableKeyPath(keyPath)
+        return lock.withLock { value in
+            let oldValue = value[keyPath: sendableKeyPath.keyPath]
+            value[keyPath: sendableKeyPath.keyPath] = newValue
             return oldValue
         }
     }
@@ -69,7 +70,10 @@ public final class Mutex<Value: Sendable>: Sendable {
     /// Reads return a locked snapshot, and writes are performed under the lock.
     public subscript<T: Sendable>(dynamicMember keyPath: WritableKeyPath<Value, T>) -> T {
         get { value[keyPath: keyPath] }
-        set { lock.withLock { value in value[keyPath: keyPath] = newValue } }
+        set {
+            let sendableKeyPath = SendableWritableKeyPath(keyPath)
+            lock.withLock { value in value[keyPath: sendableKeyPath.keyPath] = newValue }
+        }
     }
 
     /// Provides read-only dynamic-member access for immutable key paths.
@@ -78,7 +82,13 @@ public final class Mutex<Value: Sendable>: Sendable {
     }
 }
 
-// MARK: - KeyPath + @unchecked @retroactive Sendable
+// MARK: - SendableWritableKeyPath
 
-/// Marks `KeyPath` values as sendable when both root and value types are sendable.
-extension KeyPath: @unchecked @retroactive Sendable where Root: Sendable, Value: Sendable { }
+/// Keeps the unchecked key-path sendability assertion local instead of exporting a retroactive standard-library conformance.
+private struct SendableWritableKeyPath<Root: Sendable, Member: Sendable>: @unchecked Sendable {
+    let keyPath: WritableKeyPath<Root, Member>
+
+    init(_ keyPath: WritableKeyPath<Root, Member>) {
+        self.keyPath = keyPath
+    }
+}
