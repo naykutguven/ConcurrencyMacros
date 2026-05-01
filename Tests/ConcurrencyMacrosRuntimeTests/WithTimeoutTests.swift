@@ -15,6 +15,10 @@ struct WithTimeoutTests {
         case exhausted
     }
 
+    fileprivate enum ClockSleepError: Error, Equatable {
+        case failed
+    }
+
     private actor ExecutionFlag {
         var didRun = false
 
@@ -128,6 +132,29 @@ struct WithTimeoutTests {
         }
 
         Self.expectDeadlineExceeded(capturedError, until: deadline)
+    }
+
+    @Test("TimeoutError supports stable equality")
+    func timeoutErrorSupportsStableEquality() {
+        let clock = TestClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+
+        #expect(
+            ConcurrencyRuntime.TimeoutError.timedOut(after: .seconds(1))
+                == ConcurrencyRuntime.TimeoutError.timedOut(after: .seconds(1))
+        )
+        #expect(
+            ConcurrencyRuntime.TimeoutError.timedOut(after: .seconds(1))
+                != ConcurrencyRuntime.TimeoutError.timedOut(after: .seconds(2))
+        )
+        #expect(
+            ConcurrencyRuntime.TimeoutError.deadlineExceeded(until: deadline)
+                == ConcurrencyRuntime.TimeoutError.deadlineExceeded(until: deadline)
+        )
+        #expect(
+            ConcurrencyRuntime.TimeoutError.deadlineExceeded(until: deadline)
+                != ConcurrencyRuntime.TimeoutError.deadlineExceeded(until: deadline.advanced(by: .seconds(1)))
+        )
     }
 
     @Test("Returns promptly when timed-out operation ignores cancellation")
@@ -295,6 +322,32 @@ struct WithTimeoutTests {
         }
 
         Self.expectTimedOut(capturedTimeout, after: timeout)
+    }
+
+    @Test("Propagates unexpected custom-clock sleep failures")
+    func propagatesUnexpectedCustomClockSleepFailures() async {
+        let clock = FailingClock()
+        let start = ContinuousClock().now
+        var capturedError: ClockSleepError?
+
+        do {
+            _ = try await ConcurrencyRuntime.withTimeout(.seconds(1), clock: clock) {
+                await Self.sleepIgnoringCancellation(for: .milliseconds(500))
+                return 1
+            }
+            Issue.record("Expected custom clock sleep error")
+        } catch let error as ClockSleepError {
+            capturedError = error
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+
+        let elapsed = start.duration(to: ContinuousClock().now)
+        #expect(capturedError == .failed)
+        #expect(
+            elapsed < .milliseconds(250),
+            "Expected custom-clock sleep failure to return promptly, elapsed: \(elapsed)"
+        )
     }
 
     @Test("Cancels operation when timeout elapses")
@@ -524,5 +577,35 @@ private final class TestClock: Clock, @unchecked Sendable {
         for continuation in continuations {
             continuation.resume()
         }
+    }
+}
+
+private struct FailingClock: Clock, Sendable {
+    struct Instant: InstantProtocol, Sendable {
+        var offset: Duration
+
+        func advanced(by duration: Duration) -> Instant {
+            Instant(offset: offset + duration)
+        }
+
+        func duration(to other: Instant) -> Duration {
+            other.offset - offset
+        }
+
+        static func < (lhs: Instant, rhs: Instant) -> Bool {
+            lhs.offset < rhs.offset
+        }
+    }
+
+    var now: Instant {
+        Instant(offset: .zero)
+    }
+
+    var minimumResolution: Duration {
+        .zero
+    }
+
+    func sleep(until deadline: Instant, tolerance: Duration? = nil) async throws {
+        throw WithTimeoutTests.ClockSleepError.failed
     }
 }

@@ -12,7 +12,8 @@ Macro families:
 - Single flight: ``SingleFlightActor(key:using:policy:)`` and ``SingleFlightClass(key:using:policy:)``.
 - Stream bridging: ``StreamBridge(as:event:failure:completion:cancel:buffering:safety:)`` with optional defaults and token helpers.
 - Execution control: ``withTimeout(_:tolerance:operation:)``,
-  ``withTimeout(until:tolerance:operation:)``, and ``retrying(max:backoff:jitter:operation:)``.
+  ``withTimeout(_:tolerance:clock:operation:)``, ``withTimeout(until:tolerance:operation:)``,
+  ``withTimeout(until:tolerance:clock:operation:)``, and ``retrying(max:backoff:jitter:operation:)``.
 - Concurrent collections: ``concurrentMap(_:limit:transform:)-2ibki``, ``concurrentCompactMap(_:limit:transform:)-8aeps``, ``concurrentFlatMap(_:limit:transform:)-1n14``, and ``concurrentForEach(_:limit:operation:)-5uivq``.
 
 ## Quick Start
@@ -219,6 +220,7 @@ let sharedDeadlinePayload = try await #withTimeout(until: deadline, tolerance: .
 - Invocation requires either an unlabeled `Duration` or an `until:` `ContinuousClock.Instant` deadline.
 - Use `until:` when nested operations should share one absolute deadline instead of accumulating duration drift.
 - Pass `clock:` to interpret relative timeouts or absolute deadlines with a custom `Clock`.
+- Pass `tolerance:` to forward scheduling tolerance to the timeout sleep, allowing the clock to coalesce wake-ups when exact timeout enforcement is not required.
 - Operation must be supplied exactly once: trailing closure or `operation:` argument.
 - Additional trailing closures are rejected.
 - The operation is transferred into a timeout task; non-`Sendable` captures are accepted when they are not used after the call.
@@ -400,7 +402,9 @@ The following macros are helper/support APIs and are documented here without inl
 ### Execution Control
 
 - ``withTimeout(_:tolerance:operation:)``
+- ``withTimeout(_:tolerance:clock:operation:)``
 - ``withTimeout(until:tolerance:operation:)``
+- ``withTimeout(until:tolerance:clock:operation:)``
 - ``retrying(max:backoff:jitter:operation:)``
 
 ### Concurrent Collections

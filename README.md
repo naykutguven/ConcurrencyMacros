@@ -407,6 +407,7 @@ Use it around async operations that must fail fast if they exceed a deadline.
 - The first argument is either an unlabeled `Duration` or an `until:` `ContinuousClock.Instant` deadline.
 - Use `until:` when nested operations should share one absolute deadline instead of accumulating duration drift.
 - Pass `clock:` to interpret relative timeouts or absolute deadlines with a custom `Clock`.
+- Pass `tolerance:` to forward scheduling tolerance to the timeout sleep, allowing the clock to coalesce wake-ups when exact timeout enforcement is not required.
 - Provide the operation either as a trailing closure or `operation:`, but not both.
 - The operation is transferred into a timeout task; non-`Sendable` captures are accepted when they are not used after the call.
 - Timeout enforcement requests cooperative cancellation at the deadline; non-cooperative operations may continue running after the timeout error is thrown.

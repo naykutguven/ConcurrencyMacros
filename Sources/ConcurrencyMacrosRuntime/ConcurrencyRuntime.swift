@@ -7,8 +7,11 @@
 
 /// Namespace for runtime helpers used by freestanding concurrency macros.
 public enum ConcurrencyRuntime {
-    /// Error thrown when a timeout duration elapses before the operation completes.
-    public enum TimeoutError: Error, Sendable {
+    /// Error thrown when a timeout duration or deadline elapses before the operation completes.
+    ///
+    /// Equality compares elapsed timeout durations exactly. Deadline errors compare equal only when
+    /// both stored deadlines have the same concrete instant type and value.
+    public enum TimeoutError: Error, Sendable, Equatable {
         /// Indicates the operation did not complete before the timeout expired.
         ///
         /// - Parameter after: The timeout duration that elapsed.
@@ -18,6 +21,28 @@ public enum ConcurrencyRuntime {
         ///
         /// - Parameter until: The deadline instant that expired.
         case deadlineExceeded(until: any InstantProtocol & Sendable)
+
+        public static func == (lhs: TimeoutError, rhs: TimeoutError) -> Bool {
+            switch (lhs, rhs) {
+            case let (.timedOut(lhsDuration), .timedOut(rhsDuration)):
+                return lhsDuration == rhsDuration
+            case let (.deadlineExceeded(lhsDeadline), .deadlineExceeded(rhsDeadline)):
+                return deadlinesAreEqual(lhsDeadline, rhsDeadline)
+            case (.timedOut, .deadlineExceeded), (.deadlineExceeded, .timedOut):
+                return false
+            }
+        }
+
+        private static func deadlinesAreEqual<I: InstantProtocol & Sendable>(
+            _ lhs: I,
+            _ rhs: any InstantProtocol & Sendable
+        ) -> Bool {
+            guard let rhs = rhs as? I else {
+                return false
+            }
+
+            return lhs == rhs
+        }
     }
 
     /// Error thrown when retry configuration is invalid.
@@ -176,7 +201,7 @@ public enum ConcurrencyRuntime {
         tolerance: Duration? = nil,
         clock: C,
         operation: sending @escaping @isolated(any) () async throws -> T
-    ) async throws -> T where C.Instant.Duration == Duration {
+    ) async throws -> T where C.Instant.Duration == Duration, C.Instant: Sendable {
         guard duration > .zero else {
             throw TimeoutError.timedOut(after: duration)
         }
@@ -237,7 +262,7 @@ public enum ConcurrencyRuntime {
         tolerance: Duration? = nil,
         clock: C,
         operation: sending @escaping @isolated(any) () async throws -> T
-    ) async throws -> T where C.Instant.Duration == Duration {
+    ) async throws -> T where C.Instant.Duration == Duration, C.Instant: Sendable {
         guard clock.now.duration(to: deadline) > .zero else {
             throw TimeoutError.deadlineExceeded(until: deadline)
         }
@@ -257,7 +282,7 @@ public enum ConcurrencyRuntime {
         clock: C,
         timeoutError: TimeoutError,
         operation: sending @escaping @isolated(any) () async throws -> T
-    ) async throws -> T where C.Instant.Duration == Duration {
+    ) async throws -> T where C.Instant.Duration == Duration, C.Instant: Sendable {
         // A task group would await losing children at scope exit, which breaks
         // the timeout contract for non-cancellation-cooperative operations.
         let operationTask = Task(operation: operation)
@@ -275,7 +300,11 @@ public enum ConcurrencyRuntime {
             let timeoutTask = Task {
                 do {
                     try await clock.sleep(until: deadline, tolerance: tolerance)
+                } catch is CancellationError {
+                    return
                 } catch {
+                    continuation.finish(throwing: error)
+                    operationTask.cancel()
                     return
                 }
 
