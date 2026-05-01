@@ -9,35 +9,36 @@ import SwiftDiagnostics
 import SwiftSyntax
 import SwiftSyntaxMacros
 
-/// Expands `#withTimeout(duration) { ... }` or
-/// `#withTimeout(duration, operation: { ... })` into runtime helper calls.
+/// Expands `#withTimeout(duration) { ... }`, `#withTimeout(until: deadline) { ... }`,
+/// and `operation:`/`tolerance:`/`clock:` variants into runtime helper calls.
 public struct WithTimeoutMacro: ExpressionMacro {
     /// Validates invocation shape and returns a runtime helper call expression.
     public static func expansion(
         of node: some FreestandingMacroExpansionSyntax,
         in _: some MacroExpansionContext
     ) throws -> ExprSyntax {
-        guard let durationArgument = node.arguments.first else {
+        guard let timeoutArgument = node.arguments.first else {
             throw DiagnosticsError(
                 syntax: node,
                 id: "missingDurationArgument",
-                message: "'#withTimeout' requires a duration as its first argument."
+                message: "'#withTimeout' requires a duration or deadline as its first argument."
             )
         }
 
-        guard durationArgument.label == nil else {
+        let isDeadline = timeoutArgument.label?.text == "until"
+        guard timeoutArgument.label == nil || isDeadline else {
             throw DiagnosticsError(
-                syntax: durationArgument,
-                id: "durationMustBeUnlabeled",
-                message: "'#withTimeout' duration argument must be unlabeled."
+                syntax: timeoutArgument,
+                id: "invalidFirstArgumentLabel",
+                message: "'#withTimeout' first argument must be an unlabeled duration or 'until:' deadline."
             )
         }
 
-        guard node.arguments.count <= 2 else {
+        guard node.arguments.count <= 4 else {
             throw DiagnosticsError(
                 syntax: node,
                 id: "tooManyArguments",
-                message: "'#withTimeout' accepts at most one duration and one 'operation' argument."
+                message: "'#withTimeout' accepts at most one timeout/deadline, one 'tolerance:', one 'clock:', and one 'operation:' argument."
             )
         }
 
@@ -49,19 +50,52 @@ public struct WithTimeoutMacro: ExpressionMacro {
             )
         }
 
-        let operationArgument = node.arguments.dropFirst().first
-        let trailingClosure = node.trailingClosure
-        let durationSource = durationArgument.expression.trimmedDescription
+        var toleranceSource: String?
+        var clockSource: String?
+        var operationSource: String?
 
-        if let operationArgument {
-            guard operationArgument.label?.text == "operation" else {
+        for argument in node.arguments.dropFirst() {
+            switch argument.label?.text {
+            case "tolerance":
+                guard toleranceSource == nil else {
+                    throw DiagnosticsError(
+                        syntax: argument,
+                        id: "duplicateToleranceArgument",
+                        message: "'#withTimeout' accepts at most one 'tolerance:' argument."
+                    )
+                }
+                toleranceSource = argument.expression.trimmedDescription
+            case "clock":
+                guard clockSource == nil else {
+                    throw DiagnosticsError(
+                        syntax: argument,
+                        id: "duplicateClockArgument",
+                        message: "'#withTimeout' accepts at most one 'clock:' argument."
+                    )
+                }
+                clockSource = argument.expression.trimmedDescription
+            case "operation":
+                guard operationSource == nil else {
+                    throw DiagnosticsError(
+                        syntax: argument,
+                        id: "duplicateOperationArgument",
+                        message: "'#withTimeout' accepts at most one 'operation:' argument."
+                    )
+                }
+                operationSource = argument.expression.trimmedDescription
+            default:
                 throw DiagnosticsError(
-                    syntax: operationArgument,
-                    id: "invalidOperationArgumentLabel",
-                    message: "'#withTimeout' second argument must be labeled 'operation:'."
+                    syntax: argument,
+                    id: "invalidArgumentLabel",
+                    message: "'#withTimeout' arguments after the first must be labeled 'tolerance:', 'clock:', or 'operation:'."
                 )
             }
+        }
 
+        let trailingClosure = node.trailingClosure
+        let timeoutSource = timeoutArgument.expression.trimmedDescription
+
+        if operationSource != nil {
             guard trailingClosure == nil else {
                 throw DiagnosticsError(
                     syntax: node,
@@ -69,14 +103,9 @@ public struct WithTimeoutMacro: ExpressionMacro {
                     message: "'#withTimeout' operation must be provided either as trailing closure or 'operation:' argument, not both."
                 )
             }
-
-            let operationSource = operationArgument.expression.trimmedDescription
-            return ExprSyntax(
-                stringLiteral: "ConcurrencyMacros.ConcurrencyRuntime.withTimeout(\(durationSource), operation: \(operationSource))"
-            )
         }
 
-        guard let trailingClosure else {
+        guard operationSource != nil || trailingClosure != nil else {
             throw DiagnosticsError(
                 syntax: node,
                 id: "missingOperationClosure",
@@ -84,8 +113,26 @@ public struct WithTimeoutMacro: ExpressionMacro {
             )
         }
 
+        var runtimeArguments = [
+            isDeadline ? "until: \(timeoutSource)" : timeoutSource
+        ]
+        if let toleranceSource {
+            runtimeArguments.append("tolerance: \(toleranceSource)")
+        }
+        if let clockSource {
+            runtimeArguments.append("clock: \(clockSource)")
+        }
+        if let operationSource {
+            runtimeArguments.append("operation: \(operationSource)")
+        }
+
+        let runtimeCall = "ConcurrencyMacros.ConcurrencyRuntime.withTimeout(\(runtimeArguments.joined(separator: ", ")))"
+        guard let trailingClosure else {
+            return ExprSyntax(stringLiteral: runtimeCall)
+        }
+
         return ExprSyntax(
-            stringLiteral: "ConcurrencyMacros.ConcurrencyRuntime.withTimeout(\(durationSource)) \(trailingClosure.trimmedDescription)"
+            stringLiteral: "\(runtimeCall) \(trailingClosure.trimmedDescription)"
         )
     }
 }
