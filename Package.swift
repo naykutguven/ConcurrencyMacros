@@ -54,10 +54,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ConcurrencyMacrosTests",
-            dependencies: [
-                "ConcurrencyMacros",
-                "ConcurrencyMacrosRuntime"
-            ],
+            dependencies: ["ConcurrencyMacros"],
             swiftSettings: approachableConcurrencySettings
         ),
         .testTarget(
