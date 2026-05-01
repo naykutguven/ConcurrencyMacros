@@ -18,7 +18,7 @@ struct StreamBridgeRuntimeTests {
         }
     }
 
-    private final class LegacyFailureBox {
+    private final class LegacyFailureBox: Sendable {
         let code: Int
 
         init(code: Int) {
@@ -156,8 +156,8 @@ struct StreamBridgeRuntimeTests {
         #expect(first?.value == 9)
     }
 
-    @Test("Unchecked throwing bridge supports non-Sendable failure payloads")
-    func uncheckedThrowingBridgeSupportsNonSendableFailurePayloads() async {
+    @Test("Unchecked throwing bridge supports boxed failure payloads")
+    func uncheckedThrowingBridgeSupportsBoxedFailurePayloads() async {
         let stream: AsyncThrowingStream<Int, any Error> = StreamBridgeRuntime.makeThrowingStreamUnchecked(
             register: { _, onFailure, _ in
                 onFailure(LegacyFailure.disconnected(LegacyFailureBox(code: 404)))

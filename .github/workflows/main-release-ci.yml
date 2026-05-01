@@ -68,12 +68,12 @@ jobs:
       - name: Release build
         run: |
           set -euo pipefail
-          swift build -c release
+          swift build -c release -Xswiftc -warnings-as-errors
 
       - name: Release tests
         run: |
           set -euo pipefail
-          swift test -c release
+          swift test -c release -Xswiftc -warnings-as-errors
 
   platform-compile:
     name: Platform Compile (${{ matrix.platform }}, Swift 6.3)
@@ -135,4 +135,7 @@ jobs:
         run: |
           set -euo pipefail
           SDK_PATH="$(xcrun --sdk "${SDK}" --show-sdk-path)"
-          swift build --triple "${TRIPLE}" --sdk "${SDK_PATH}"
+          swift build \
+            --triple "${TRIPLE}" \
+            --sdk "${SDK_PATH}" \
+            -Xswiftc -warnings-as-errors
