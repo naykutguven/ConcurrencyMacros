@@ -286,14 +286,20 @@ public enum ConcurrencyRuntime {
         // A task group would await losing children at scope exit, which breaks
         // the timeout contract for non-cancellation-cooperative operations.
         let operationTask = Task(operation: operation)
+        let completionState = TimeoutRaceCompletionState()
 
         let results = AsyncThrowingStream<T, any Error> { continuation in
             let operationWaiter = Task {
                 do {
-                    continuation.yield(try await operationTask.value)
-                    continuation.finish()
+                    let value = try await operationTask.value
+                    completionState.complete {
+                        continuation.yield(value)
+                        continuation.finish()
+                    }
                 } catch {
-                    continuation.finish(throwing: error)
+                    completionState.complete {
+                        continuation.finish(throwing: error)
+                    }
                 }
             }
 
@@ -303,16 +309,19 @@ public enum ConcurrencyRuntime {
                 } catch is CancellationError {
                     return
                 } catch {
-                    continuation.finish(throwing: error)
-                    operationTask.cancel()
+                    if completionState.complete({ continuation.finish(throwing: error) }) {
+                        operationTask.cancel()
+                    }
                     return
                 }
 
-                continuation.finish(throwing: timeoutError)
-                operationTask.cancel()
+                if completionState.complete({ continuation.finish(throwing: timeoutError) }) {
+                    operationTask.cancel()
+                }
             }
 
             continuation.onTermination = { @Sendable _ in
+                completionState.cancel()
                 operationWaiter.cancel()
                 timeoutTask.cancel()
                 operationTask.cancel()
@@ -466,6 +475,32 @@ public enum ConcurrencyRuntime {
         operation: @escaping @Sendable (C.Element) async throws -> Void
     ) async throws where C.Element: Sendable {
         try await executeConcurrently(sequence, limit: limit, operation: operation)
+    }
+}
+
+/// Coordinates competing timeout race completions so exactly one terminal result is published.
+final class TimeoutRaceCompletionState: Sendable {
+    private let isComplete = Mutex(false)
+
+    @discardableResult
+    func complete(_ action: () -> Void) -> Bool {
+        let shouldComplete = isComplete.mutate { isComplete in
+            guard !isComplete else {
+                return false
+            }
+
+            isComplete = true
+            return true
+        }
+
+        if shouldComplete {
+            action()
+        }
+        return shouldComplete
+    }
+
+    func cancel() {
+        isComplete.set(true)
     }
 }
 

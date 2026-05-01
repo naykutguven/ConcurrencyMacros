@@ -350,6 +350,46 @@ struct WithTimeoutTests {
         )
     }
 
+    @Test("Timeout race completion state runs only the first completion")
+    func timeoutRaceCompletionStateRunsOnlyFirstCompletion() async {
+        let completionState = TimeoutRaceCompletionState()
+        let completionCount = Mutex(0)
+
+        let winnerCount = await withTaskGroup(of: Int.self) { group in
+            for _ in 0..<100 {
+                group.addTask {
+                    completionState.complete {
+                        completionCount.mutate { $0 += 1 }
+                    } ? 1 : 0
+                }
+            }
+
+            var winnerCount = 0
+            for await result in group {
+                winnerCount += result
+            }
+            return winnerCount
+        }
+
+        #expect(winnerCount == 1)
+        #expect(completionCount.value == 1)
+        #expect(
+            completionState.complete {
+                completionCount.mutate { $0 += 1 }
+            } == false
+        )
+        #expect(completionCount.value == 1)
+
+        let cancelledState = TimeoutRaceCompletionState()
+        cancelledState.cancel()
+        #expect(
+            cancelledState.complete {
+                completionCount.mutate { $0 += 1 }
+            } == false
+        )
+        #expect(completionCount.value == 1)
+    }
+
     @Test("Cancels operation when timeout elapses")
     func cancelsOperationWhenTimeoutElapses() async {
         let probe = CancellationProbe()
