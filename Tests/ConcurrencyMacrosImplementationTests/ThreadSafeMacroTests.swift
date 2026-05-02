@@ -125,6 +125,80 @@ struct ThreadSafeMacroTests {
         }
     }
 
+    @Test("Diagnoses complex inferred defaults without explicit type annotations")
+    func diagnosesComplexInferredDefaultsWithoutExplicitTypeAnnotations() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var formatter = DateFormatter()
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "Property 'formatter' must declare an explicit type when the default value is not a simple literal.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "complexInferredDefault"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Diagnoses multi-binding mutable stored properties")
+    func diagnosesMultiBindingMutableStoredProperties() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var first: Int = 1, second: Int = 2
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe supports one stored property per declaration; split this declaration into separate var declarations.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "multipleBindingsUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Diagnoses attributes on tracked stored properties")
+    func diagnosesAttributesOnTrackedStoredProperties() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                @Clamped var count: Int = 0
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe does not support attributes on stored property 'count' in 1.0.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyAttributesUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Ignores computed properties because they are not stored state")
+    func ignoresComputedPropertiesBecauseTheyAreNotStoredState() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var computed: Int { 1 }
+            }
+            """
+        )
+
+        let expanded = try expandMembers(for: declaration)
+
+        #expect(expanded.count == 3)
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=ConcurrencyMacros.Mutex<_State>(_State())")
+        #expect(expanded[1].nonWhitespaceDescription == "privatestruct_State:Sendable{}")
+    }
+
     @Test("Generates uninitialized internal state when class defines an initializer")
     func generatesUninitializedInternalStateWithInitializer() throws {
         let declaration = try classDeclaration(
@@ -376,6 +450,28 @@ private extension ThreadSafeMacroTests {
             providingAttributesFor: member,
             in: BasicMacroExpansionContext()
         )
+    }
+
+    /// Asserts that a `@ThreadSafe` expansion operation throws a single expected diagnostic.
+    ///
+    /// - Parameters:
+    ///   - expectedMessage: Exact diagnostic text expected from the macro.
+    ///   - expectedID: Stable diagnostic identifier expected from the macro.
+    ///   - operation: Expansion operation that should fail with `DiagnosticsError`.
+    func assertThreadSafeDiagnostic(
+        expectedMessage: String,
+        expectedID: MessageID,
+        operation: () throws -> Void
+    ) throws {
+        do {
+            try operation()
+            Issue.record("Expected diagnostics error to be thrown")
+        } catch let error as DiagnosticsError {
+            let diagnostic = try #require(error.diagnostics.first)
+            #expect(diagnostic.message == expectedMessage)
+            #expect(diagnostic.diagMessage.severity == .error)
+            #expect(diagnostic.diagMessage.diagnosticID == expectedID)
+        }
     }
 
     /// Parses and returns the first declaration from source text.
