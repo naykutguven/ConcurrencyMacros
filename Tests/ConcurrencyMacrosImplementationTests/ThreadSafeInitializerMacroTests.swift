@@ -6,6 +6,7 @@
 //
 
 import SwiftParser
+import SwiftDiagnostics
 import SwiftSyntax
 import SwiftSyntaxMacroExpansion
 import Testing
@@ -111,6 +112,89 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Rewrites no-space initializer assignments")
+    func rewritesNoSpaceInitializerAssignments() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(first: String, second: Int) {
+                    self.first=first
+                    second=second + 1
+                    print(second)
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["first": Storage<String>(), "second": Storage<Int>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_first:String",
+                "var_second:Int",
+                "_first=first",
+                "_second=second+1",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(first:_first,second:_second))",
+                "print(second)",
+            ]
+        )
+    }
+
+    @Test("Does not rewrite comparison expressions that mention tracked names")
+    func doesNotRewriteComparisonExpressionsThatMentionTrackedNames() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, other: Int) {
+                    count == other
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                "count==other",
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+            ]
+        )
+    }
+
+    @Test("Diagnoses required assignments inside unsupported control flow")
+    func diagnosesRequiredAssignmentsInsideUnsupportedControlFlow() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, flag: Bool) {
+                    if flag {
+                        self.count = count
+                    } else {
+                        self.count = 0
+                    }
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "Initializer must assign tracked property 'count' with a plain top-level assignment before @ThreadSafe state initialization.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "requiredInitializerAssignmentUnsupported")
+        )
+    }
+
     @Test("Places internal state initialization first when no required property is assigned")
     func placesInternalStateInitializationFirstWithoutRequiredAssignments() throws {
         let declaration = try initializerInStruct(
@@ -207,6 +291,30 @@ private extension ThreadSafeInitializerMacroTests {
             providingBodyFor: declaration,
             in: BasicMacroExpansionContext()
         )
+    }
+
+    /// Asserts that initializer body expansion throws a single expected diagnostic.
+    ///
+    /// - Parameters:
+    ///   - attributeSource: Source text that parses to an attribute.
+    ///   - declaration: Initializer declaration whose body should be expanded.
+    ///   - expectedMessage: Exact diagnostic message expected from expansion.
+    ///   - expectedID: Stable diagnostic identifier expected from expansion.
+    func assertInitializerDiagnostic(
+        attributeSource: String,
+        for declaration: InitializerDeclSyntax,
+        expectedMessage: String,
+        expectedID: MessageID
+    ) throws {
+        do {
+            _ = try expandBody(attributeSource: attributeSource, for: declaration)
+            Issue.record("Expected diagnostics error to be thrown")
+        } catch let error as DiagnosticsError {
+            let diagnostic = try #require(error.diagnostics.first)
+            #expect(diagnostic.message == expectedMessage)
+            #expect(diagnostic.diagMessage.severity == .error)
+            #expect(diagnostic.diagMessage.diagnosticID == expectedID)
+        }
     }
 
     /// Parses an `AttributeSyntax` node from source text.
