@@ -195,8 +195,28 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
-    @Test("Places internal state initialization first when no required property is assigned")
-    func placesInternalStateInitializationFirstWithoutRequiredAssignments() throws {
+    @Test("Diagnoses required property missing a top-level assignment")
+    func diagnosesRequiredPropertyMissingTopLevelAssignment() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(id: Int) {
+                    print(id)
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["id": Storage<Int>(), "name": Storage<String>(value: "Anonymous")])"#,
+            for: declaration,
+            expectedMessage: "Initializer must assign tracked property 'id' with a plain top-level assignment before @ThreadSafe state initialization.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "requiredInitializerAssignmentUnsupported")
+        )
+    }
+
+    @Test("Places internal state initialization first when all tracked properties have defaults")
+    func placesInternalStateInitializationFirstWhenAllTrackedPropertiesHaveDefaults() throws {
         let declaration = try initializerInStruct(
             """
             struct Example {
@@ -208,15 +228,14 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["id": Storage<Int>(), "name": Storage<String>(value: "Anonymous")])"#,
+            attributeSource: #"@ThreadSafeInitializer(["name": Storage<String>(value: "Anonymous")])"#,
             for: declaration
         )
 
         #expect(
             expanded.map(\.nonWhitespaceDescription) == [
-                "let_id:Int",
                 #"let_name:String="Anonymous""#,
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(id:_id,name:_name))",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(name:_name))",
                 "print(id)",
             ]
         )
