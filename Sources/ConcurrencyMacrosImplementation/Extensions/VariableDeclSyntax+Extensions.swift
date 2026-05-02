@@ -113,12 +113,25 @@ private extension AttributeListSyntax.Element {
         guard let attribute = self.as(AttributeSyntax.self) else {
             return false
         }
-        return attribute.attributeName.trimmedDescription == "ThreadSafeProperty"
+        let name = attribute.attributeName.trimmedDescription
+            .replacingOccurrences(of: " ", with: "")
+        return name == "ThreadSafeProperty" || name.hasSuffix(".ThreadSafeProperty")
     }
 }
 
 private extension ExprSyntax {
     var simpleLiteralType: String? {
+        if let prefixedExpression = self.as(PrefixOperatorExprSyntax.self),
+           prefixedExpression.operator.text == "-" {
+            if prefixedExpression.expression.as(IntegerLiteralExprSyntax.self) != nil {
+                return "Int"
+            }
+
+            if prefixedExpression.expression.as(FloatLiteralExprSyntax.self) != nil {
+                return "Double"
+            }
+        }
+
         if self.as(BooleanLiteralExprSyntax.self) != nil {
             return "Bool"
         }

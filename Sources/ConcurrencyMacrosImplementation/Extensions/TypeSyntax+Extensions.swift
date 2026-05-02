@@ -20,9 +20,19 @@ extension TypeSyntax {
 
     /// Returns a `nil` expression for optional types and `nil` for non-optionals.
     var defaultValueForOptionalExpr: ExprSyntax? {
-        guard self.as(OptionalTypeSyntax.self) != nil else {
+        guard isOptionalLike else {
             return nil
         }
         return ExprSyntax(stringLiteral: "nil")
+    }
+
+    private var isOptionalLike: Bool {
+        if self.as(OptionalTypeSyntax.self) != nil ||
+            self.as(ImplicitlyUnwrappedOptionalTypeSyntax.self) != nil {
+            return true
+        }
+
+        let normalizedType = trimmedDescription.replacingOccurrences(of: " ", with: "")
+        return normalizedType.hasPrefix("Optional<") || normalizedType.hasPrefix("Swift.Optional<")
     }
 }

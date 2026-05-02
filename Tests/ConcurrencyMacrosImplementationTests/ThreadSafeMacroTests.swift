@@ -233,6 +233,65 @@ struct ThreadSafeMacroTests {
         )
     }
 
+    @Test("Stored property extractor defaults optional spellings to nil")
+    func storedPropertyExtractorDefaultsOptionalSpellingsToNil() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var shorthand: String?
+                var generic: Optional<Int>
+                var qualified: Swift.Optional<Double>
+                var implicitlyUnwrapped: Bool!
+            }
+            """
+        )
+
+        let properties = try declaration.threadSafeStoredProperties()
+
+        #expect(properties.map(\.nameText) == ["shorthand", "generic", "qualified", "implicitlyUnwrapped"])
+        #expect(properties.map(\.typeDescription) == ["String?", "Optional<Int>", "Swift.Optional<Double>", "Bool!"])
+        #expect(properties.map(\.defaultValueDescription) == ["nil", "nil", "nil", "nil"])
+    }
+
+    @Test("Stored property extractor infers negative numeric literal types")
+    func storedPropertyExtractorInfersNegativeNumericLiteralTypes() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var integer = -1
+                var double = -1.0
+            }
+            """
+        )
+
+        let properties = try declaration.threadSafeStoredProperties()
+
+        #expect(properties.map(\.nameText) == ["integer", "double"])
+        #expect(properties.map(\.typeDescription) == ["Int", "Double"])
+        #expect(properties.map(\.defaultValueDescription) == ["-1", "-1.0"])
+    }
+
+    @Test("Stored property extractor detects qualified ThreadSafeProperty attributes")
+    func storedPropertyExtractorDetectsQualifiedThreadSafePropertyAttributes() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                @ConcurrencyMacros.ThreadSafeProperty var count: Int = 0
+            }
+            """
+        )
+
+        let variable = try #require(
+            try declaration.memberDecl(at: 0).as(VariableDeclSyntax.self)
+        )
+        let properties = try declaration.threadSafeStoredProperties()
+
+        #expect(variable.hasThreadSafePropertyAttribute)
+        #expect(properties.map(\.nameText) == ["count"])
+        #expect(properties.first?.typeDescription == "Int")
+        #expect(properties.first?.defaultValueDescription == "0")
+    }
+
     @Test("Generates empty internal state for classes without mutable stored properties")
     func generatesEmptyInternalStateWhenNoMutableStoredPropertiesExist() throws {
         let declaration = try classDeclaration(
