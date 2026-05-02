@@ -221,15 +221,15 @@ struct ThreadSafeMacroTests {
         #expect(expanded[2].nonWhitespaceDescription.contains("_state.mutate(mutation)"))
     }
 
-    @Test("SendableDiagnostic exposes stable metadata")
-    func sendableDiagnosticExposesStableMetadata() {
-        let diagnostic = SendableDiagnostic(message: "Example")
+    @Test("ThreadSafeDiagnostic exposes stable metadata")
+    func threadSafeDiagnosticExposesStableMetadata() {
+        let diagnostic = ThreadSafeDiagnostic(id: "example", message: "Example")
 
         #expect(diagnostic.message == "Example")
         #expect(diagnostic.severity == .error)
         #expect(
             diagnostic.diagnosticID
-                == MessageID(domain: "ThreadSafeMacro", id: "propertyReplacement")
+                == MessageID(domain: "ThreadSafeMacro", id: "example")
         )
     }
 
