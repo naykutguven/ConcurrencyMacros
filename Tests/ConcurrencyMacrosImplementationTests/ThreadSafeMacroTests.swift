@@ -467,6 +467,7 @@ private extension ThreadSafeMacroTests {
             try operation()
             Issue.record("Expected diagnostics error to be thrown")
         } catch let error as DiagnosticsError {
+            #expect(error.diagnostics.count == 1)
             let diagnostic = try #require(error.diagnostics.first)
             #expect(diagnostic.message == expectedMessage)
             #expect(diagnostic.diagMessage.severity == .error)
