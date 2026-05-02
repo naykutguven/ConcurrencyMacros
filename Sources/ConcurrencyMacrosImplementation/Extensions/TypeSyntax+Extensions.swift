@@ -17,4 +17,12 @@ extension TypeSyntax {
         }
         return "nil"
     }
+
+    /// Returns a `nil` expression for optional types and `nil` for non-optionals.
+    var defaultValueForOptionalExpr: ExprSyntax? {
+        guard self.as(OptionalTypeSyntax.self) != nil else {
+            return nil
+        }
+        return ExprSyntax(stringLiteral: "nil")
+    }
 }

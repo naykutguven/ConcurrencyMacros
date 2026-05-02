@@ -106,6 +106,26 @@ extension ClassDeclSyntax {
         return storedVars
     }
 
+    /// Returns mutable stored properties tracked by `@ThreadSafe`.
+    func threadSafeStoredProperties() throws -> [ThreadSafeStoredProperty] {
+        var storedProperties = [ThreadSafeStoredProperty]()
+
+        for member in memberBlock.members {
+            guard let varDecl = member.decl.as(VariableDeclSyntax.self) else {
+                continue
+            }
+
+            switch try varDecl.threadSafeStoredProperty() {
+            case .ignored:
+                continue
+            case .tracked(let property):
+                storedProperties.append(property)
+            }
+        }
+
+        return storedProperties
+    }
+
     private func stripTrailingCallSuffix(from value: String) -> String {
         guard let match = value.firstMatch(of: Self.trailingCallSuffixRegex) else {
             return value
