@@ -209,6 +209,25 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         shadowedNames: Set<String>
     ) -> String? {
         let syntax = Syntax(node)
+
+        if let statements = syntax.as(CodeBlockItemListSyntax.self) {
+            var blockShadowedNames = shadowedNames
+
+            for statement in statements {
+                if let propertyName = firstTrackedAssignment(
+                    in: statement,
+                    trackedNames: trackedNames,
+                    shadowedNames: blockShadowedNames
+                ) {
+                    return propertyName
+                }
+
+                blockShadowedNames.formUnion(topLevelLocalNames(in: statement, trackedNames: trackedNames))
+            }
+
+            return nil
+        }
+
         if let expression = syntax.as(ExprSyntax.self),
            let assignmentParts = assignmentParts(from: expression),
            let target = trackedAssignmentTarget(from: assignmentParts.leftHandSide),

@@ -298,6 +298,38 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Allows nested local shadowing before state initialization")
+    func allowsNestedLocalShadowingBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, flag: Bool) {
+                    if flag {
+                        var name = "Temp"
+                        name = "Override"
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                #"let_name:String="Seed""#,
+                "ifflag{varname=\"Temp\"name=\"Override\"}",
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+            ]
+        )
+    }
+
     @Test("Places internal state initialization first when all tracked properties have defaults")
     func placesInternalStateInitializationFirstWhenAllTrackedPropertiesHaveDefaults() throws {
         let declaration = try initializerInStruct(
