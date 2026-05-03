@@ -99,7 +99,9 @@ struct ThreadSafeMacroTests {
         #expect(output.contains("varvalues:[String:Int]"))
         #expect(output.contains("varformatter:DateFormatter"))
         #expect(output.contains("get{_state.value.values}"))
+        #expect(output.contains("set{_=_state.set(\\.values,to:newValue)}"))
         #expect(output.contains("get{_state.value.formatter}"))
+        #expect(output.contains("set{_=_state.set(\\.formatter,to:newValue)}"))
     }
 
     @Test("Generates initialized internal state for classes without initializers")
