@@ -173,17 +173,28 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         return Set(
-            variable.bindings.compactMap { binding in
-                guard
-                    let pattern = binding.pattern.as(IdentifierPatternSyntax.self),
-                    trackedNames.contains(pattern.identifier.text)
-                else {
-                    return nil
-                }
-
-                return pattern.identifier.text
+            variable.bindings.flatMap { binding in
+                localNames(in: binding.pattern).filter { trackedNames.contains($0) }
             }
         )
+    }
+
+    private static func localNames(in pattern: PatternSyntax) -> [String] {
+        if let identifierPattern = pattern.as(IdentifierPatternSyntax.self) {
+            return [identifierPattern.identifier.text]
+        }
+
+        if let tuplePattern = pattern.as(TuplePatternSyntax.self) {
+            return tuplePattern.elements.flatMap { element in
+                localNames(in: element.pattern)
+            }
+        }
+
+        if let valueBindingPattern = pattern.as(ValueBindingPatternSyntax.self) {
+            return localNames(in: valueBindingPattern.pattern)
+        }
+
+        return []
     }
 
     private static func assignmentParts(from expression: ExprSyntax) -> (leftHandSide: ExprSyntax, rightHandSide: ExprSyntax)? {

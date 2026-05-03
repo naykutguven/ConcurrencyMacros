@@ -201,6 +201,36 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Does not rewrite bare assignments after a top-level tuple local declaration shadows a tracked property")
+    func doesNotRewriteBareAssignmentsAfterTopLevelTupleLocalDeclarationShadowsTrackedProperty() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(input: Int) {
+                    var (count, other) = (input, 0)
+                    count = count + 1
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                "var(count,other)=(input,0)",
+                "count=count+1",
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+            ]
+        )
+    }
+
     @Test("Diagnoses required assignments inside unsupported control flow")
     func diagnosesRequiredAssignmentsInsideUnsupportedControlFlow() throws {
         let declaration = try initializerInStruct(
