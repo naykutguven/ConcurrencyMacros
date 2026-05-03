@@ -210,6 +210,30 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
     ) -> String? {
         let syntax = Syntax(node)
 
+        if let ifExpression = syntax.as(IfExprSyntax.self) {
+            return firstTrackedAssignment(
+                in: ifExpression,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let guardStatement = syntax.as(GuardStmtSyntax.self) {
+            return firstTrackedAssignment(
+                in: guardStatement,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let whileStatement = syntax.as(WhileStmtSyntax.self) {
+            return firstTrackedAssignment(
+                in: whileStatement,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
+        }
+
         if let statements = syntax.as(CodeBlockItemListSyntax.self) {
             var blockShadowedNames = shadowedNames
 
@@ -250,10 +274,101 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         return nil
     }
 
+    private static func firstTrackedAssignment(
+        in ifExpression: IfExprSyntax,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        if let propertyName = firstTrackedAssignment(
+            in: ifExpression.conditions,
+            trackedNames: trackedNames,
+            shadowedNames: shadowedNames
+        ) {
+            return propertyName
+        }
+
+        let bodyShadowedNames = shadowedNames.union(
+            localNames(in: ifExpression.conditions, trackedNames: trackedNames)
+        )
+        if let propertyName = firstTrackedAssignment(
+            in: ifExpression.body.statements,
+            trackedNames: trackedNames,
+            shadowedNames: bodyShadowedNames
+        ) {
+            return propertyName
+        }
+
+        if let elseIfExpression = ifExpression.elseBody?.as(IfExprSyntax.self) {
+            return firstTrackedAssignment(
+                in: elseIfExpression,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let elseBlock = ifExpression.elseBody?.as(CodeBlockSyntax.self) {
+            return firstTrackedAssignment(
+                in: elseBlock.statements,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        return nil
+    }
+
+    private static func firstTrackedAssignment(
+        in guardStatement: GuardStmtSyntax,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        if let propertyName = firstTrackedAssignment(
+            in: guardStatement.conditions,
+            trackedNames: trackedNames,
+            shadowedNames: shadowedNames
+        ) {
+            return propertyName
+        }
+
+        return firstTrackedAssignment(
+            in: guardStatement.body.statements,
+            trackedNames: trackedNames,
+            shadowedNames: shadowedNames
+        )
+    }
+
+    private static func firstTrackedAssignment(
+        in whileStatement: WhileStmtSyntax,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        if let propertyName = firstTrackedAssignment(
+            in: whileStatement.conditions,
+            trackedNames: trackedNames,
+            shadowedNames: shadowedNames
+        ) {
+            return propertyName
+        }
+
+        let bodyShadowedNames = shadowedNames.union(
+            localNames(in: whileStatement.conditions, trackedNames: trackedNames)
+        )
+        return firstTrackedAssignment(
+            in: whileStatement.body.statements,
+            trackedNames: trackedNames,
+            shadowedNames: bodyShadowedNames
+        )
+    }
+
     private static func topLevelLocalNames(
         in statement: CodeBlockItemSyntax,
         trackedNames: Set<String>
     ) -> Set<String> {
+        if case .stmt(let statement) = statement.item,
+           let guardStatement = statement.as(GuardStmtSyntax.self) {
+            return localNames(in: guardStatement.conditions, trackedNames: trackedNames)
+        }
+
         guard
             case .decl(let declaration) = statement.item,
             let variable = declaration.as(VariableDeclSyntax.self)
@@ -284,6 +399,21 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         return []
+    }
+
+    private static func localNames(
+        in conditions: ConditionElementListSyntax,
+        trackedNames: Set<String>
+    ) -> Set<String> {
+        Set(
+            conditions.flatMap { conditionElement in
+                guard let optionalBinding = conditionElement.condition.as(OptionalBindingConditionSyntax.self) else {
+                    return [String]()
+                }
+
+                return localNames(in: optionalBinding.pattern).filter { trackedNames.contains($0) }
+            }
+        )
     }
 
     private static func assignmentParts(from expression: ExprSyntax) -> (leftHandSide: ExprSyntax, rightHandSide: ExprSyntax)? {
