@@ -75,6 +75,33 @@ struct ThreadSafeMacroTests {
         #expect(output.contains("self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))"))
     }
 
+    @Test("Expands ThreadSafe end-to-end with explicitly typed complex defaults")
+    func expandsThreadSafeEndToEndWithExplicitlyTypedComplexDefaults() {
+        let sourceFile = Parser.parse(
+            source: """
+            @ThreadSafe
+            class Example {
+                var values: [String: Int] = [:]
+                var formatter: DateFormatter = DateFormatter()
+            }
+            """
+        )
+
+        let context = BasicMacroExpansionContext()
+        let expanded = sourceFile.expand(
+            macros: Self.endToEndMacros,
+            contextGenerator: { _ in context },
+            indentationWidth: .spaces(4)
+        )
+        let output = expanded.nonWhitespaceDescription
+
+        #expect(output.contains("privatelet_state=ConcurrencyMacros.Mutex<_State>(_State(values:[:],formatter:DateFormatter()))"))
+        #expect(output.contains("varvalues:[String:Int]"))
+        #expect(output.contains("varformatter:DateFormatter"))
+        #expect(output.contains("get{_state.value.values}"))
+        #expect(output.contains("get{_state.value.formatter}"))
+    }
+
     @Test("Generates initialized internal state for classes without initializers")
     func generatesInitializedInternalStateWithoutInitializer() throws {
         let declaration = try classDeclaration(
