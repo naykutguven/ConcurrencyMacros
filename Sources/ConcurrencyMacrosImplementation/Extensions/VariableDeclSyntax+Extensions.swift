@@ -51,6 +51,14 @@ extension VariableDeclSyntax {
             )
         }
 
+        if let unsupportedModifier = modifiers.firstUnsupportedThreadSafeStoredPropertyModifier {
+            throw DiagnosticsError(
+                threadSafe: unsupportedModifier,
+                id: "propertyModifiersUnsupported",
+                message: "@ThreadSafe does not support modifier '\(unsupportedModifier.name.text)' on stored property '\(name.text)' in 1.0."
+            )
+        }
+
         let defaultValue = binding.initializer?.value
 
         if let type = binding.typeAnnotation?.type {
@@ -90,6 +98,23 @@ extension VariableDeclSyntax {
 
     var hasThreadSafePropertyAttribute: Bool {
         attributes.contains { $0.isThreadSafePropertyAttribute }
+    }
+}
+
+private extension DeclModifierListSyntax {
+    var firstUnsupportedThreadSafeStoredPropertyModifier: DeclModifierSyntax? {
+        first { !$0.isSupportedThreadSafeStoredPropertyModifier }
+    }
+}
+
+private extension DeclModifierSyntax {
+    var isSupportedThreadSafeStoredPropertyModifier: Bool {
+        switch name.text {
+        case "open", "public", "package", "internal", "fileprivate", "private":
+            return true
+        default:
+            return false
+        }
     }
 }
 

@@ -72,9 +72,18 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         let requiredNames = Set(trackedProperties.filter(\.isRequired).map(\.name))
         var trackedAssignmentsByOffset: [Int: TrackedAssignment] = [:]
         var assignedRequiredNames = Set<String>()
+        var shadowedTrackedNames = Set<String>()
 
         for (offset, statement) in decl.statements.enumerated() {
-            guard let assignment = trackedAssignment(in: statement, trackedNames: trackedNames) else {
+            defer {
+                shadowedTrackedNames.formUnion(topLevelLocalNames(in: statement, trackedNames: trackedNames))
+            }
+
+            guard let assignment = trackedAssignment(
+                in: statement,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedTrackedNames
+            ) else {
                 continue
             }
 
@@ -136,18 +145,45 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
 
     private static func trackedAssignment(
         in statement: CodeBlockItemSyntax,
-        trackedNames: Set<String>
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
     ) -> TrackedAssignment? {
         guard
             case .expr(let expression) = statement.item,
             let assignmentParts = assignmentParts(from: expression),
-            let propertyName = trackedPropertyName(from: assignmentParts.leftHandSide),
-            trackedNames.contains(propertyName)
+            let target = trackedAssignmentTarget(from: assignmentParts.leftHandSide),
+            trackedNames.contains(target.propertyName),
+            !target.isShadowed(by: shadowedNames)
         else {
             return nil
         }
 
-        return TrackedAssignment(propertyName: propertyName, rightHandSide: assignmentParts.rightHandSide)
+        return TrackedAssignment(propertyName: target.propertyName, rightHandSide: assignmentParts.rightHandSide)
+    }
+
+    private static func topLevelLocalNames(
+        in statement: CodeBlockItemSyntax,
+        trackedNames: Set<String>
+    ) -> Set<String> {
+        guard
+            case .decl(let declaration) = statement.item,
+            let variable = declaration.as(VariableDeclSyntax.self)
+        else {
+            return []
+        }
+
+        return Set(
+            variable.bindings.compactMap { binding in
+                guard
+                    let pattern = binding.pattern.as(IdentifierPatternSyntax.self),
+                    trackedNames.contains(pattern.identifier.text)
+                else {
+                    return nil
+                }
+
+                return pattern.identifier.text
+            }
+        )
     }
 
     private static func assignmentParts(from expression: ExprSyntax) -> (leftHandSide: ExprSyntax, rightHandSide: ExprSyntax)? {
@@ -181,9 +217,9 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         return nil
     }
 
-    private static func trackedPropertyName(from expression: ExprSyntax) -> String? {
+    private static func trackedAssignmentTarget(from expression: ExprSyntax) -> TrackedAssignmentTarget? {
         if let referenceExpression = expression.as(DeclReferenceExprSyntax.self) {
-            return referenceExpression.baseName.text
+            return .bare(referenceExpression.baseName.text)
         }
 
         guard
@@ -194,7 +230,28 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             return nil
         }
 
-        return memberAccessExpression.declName.baseName.text
+        return .explicitSelf(memberAccessExpression.declName.baseName.text)
+    }
+
+    private enum TrackedAssignmentTarget {
+        case bare(String)
+        case explicitSelf(String)
+
+        var propertyName: String {
+            switch self {
+            case .bare(let name), .explicitSelf(let name):
+                return name
+            }
+        }
+
+        func isShadowed(by names: Set<String>) -> Bool {
+            switch self {
+            case .bare(let name):
+                return names.contains(name)
+            case .explicitSelf:
+                return false
+            }
+        }
     }
 }
 

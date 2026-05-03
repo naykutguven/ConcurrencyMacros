@@ -211,6 +211,34 @@ struct ThreadSafeMacroTests {
         )
     }
 
+    @Test("Diagnoses unsupported modifiers on tracked stored properties")
+    func diagnosesUnsupportedModifiersOnTrackedStoredProperties() throws {
+        let cases = [
+            (modifier: "static", name: "count", declaration: "static var count: Int = 0"),
+            (modifier: "lazy", name: "cache", declaration: "lazy var cache: Int = 0"),
+            (modifier: "weak", name: "delegate", declaration: "weak var delegate: Delegate?"),
+            (modifier: "unowned", name: "owner", declaration: "unowned var owner: Owner"),
+        ]
+
+        for testCase in cases {
+            let declaration = try classDeclaration(
+                in: """
+                class Example {
+                    \(testCase.declaration)
+                }
+                """
+            )
+
+            try assertThreadSafeDiagnostic(
+                expectedMessage: "@ThreadSafe does not support modifier '\(testCase.modifier)' on stored property '\(testCase.name)' in 1.0.",
+                expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyModifiersUnsupported"),
+                operation: {
+                    _ = try expandMembers(for: declaration)
+                }
+            )
+        }
+    }
+
     @Test("Ignores computed properties because they are not stored state")
     func ignoresComputedPropertiesBecauseTheyAreNotStoredState() throws {
         let declaration = try classDeclaration(
@@ -226,6 +254,22 @@ struct ThreadSafeMacroTests {
         #expect(expanded.count == 3)
         #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=ConcurrencyMacros.Mutex<_State>(_State())")
         #expect(expanded[1].nonWhitespaceDescription == "privatestruct_State:Sendable{}")
+    }
+
+    @Test("Tracks stored properties with access-control modifiers")
+    func tracksStoredPropertiesWithAccessControlModifiers() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                private var count: Int = 0
+            }
+            """
+        )
+
+        let expanded = try expandMembers(for: declaration)
+
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=ConcurrencyMacros.Mutex<_State>(_State(count:0))")
+        #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
     }
 
     @Test("Generates uninitialized internal state when class defines an initializer")
