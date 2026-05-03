@@ -256,6 +256,29 @@ struct ThreadSafeMacroTests {
         #expect(expanded[1].nonWhitespaceDescription == "privatestruct_State:Sendable{}")
     }
 
+    @Test("Diagnoses observers on mutable stored properties")
+    func diagnosesObserversOnMutableStoredProperties() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var count: Int = 0 {
+                    didSet {
+                        print(count)
+                    }
+                }
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe does not support property observers on stored property 'count' in 1.0.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyObserversUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
     @Test("Tracks stored properties with access-control modifiers")
     func tracksStoredPropertiesWithAccessControlModifiers() throws {
         let declaration = try classDeclaration(

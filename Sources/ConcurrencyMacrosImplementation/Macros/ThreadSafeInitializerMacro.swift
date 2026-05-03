@@ -106,6 +106,27 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             .map(\.key)
             .max() ?? -1
 
+        var preStateShadowedTrackedNames = Set<String>()
+        for (offset, statement) in decl.statements.enumerated() where offset <= lastRequiredAssignmentOffset {
+            let unsupportedAssignment = unsupportedPreStateAssignment(
+                in: statement,
+                topLevelAssignment: trackedAssignmentsByOffset[offset],
+                trackedNames: trackedNames,
+                shadowedNames: preStateShadowedTrackedNames
+            )
+
+            guard let unsupportedAssignment else {
+                preStateShadowedTrackedNames.formUnion(topLevelLocalNames(in: statement, trackedNames: trackedNames))
+                continue
+            }
+
+            throw DiagnosticsError(
+                threadSafe: statement,
+                id: "unsupportedInitializerAssignment",
+                message: "Initializer assignment to tracked property '\(unsupportedAssignment)' must be a plain top-level assignment before @ThreadSafe state initialization."
+            )
+        }
+
         // Replace foo = ... by _foo = ... for all stored properties
         var mutatedProperties = Set<String>()
         var statements: [CodeBlockItemSyntax?] = decl.statements.enumerated().flatMap { offset, statement -> [CodeBlockItemSyntax?] in
@@ -159,6 +180,55 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         return TrackedAssignment(propertyName: target.propertyName, rightHandSide: assignmentParts.rightHandSide)
+    }
+
+    private static func unsupportedPreStateAssignment(
+        in statement: CodeBlockItemSyntax,
+        topLevelAssignment: TrackedAssignment?,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        if let topLevelAssignment {
+            return firstTrackedAssignment(
+                in: topLevelAssignment.rightHandSide,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        return firstTrackedAssignment(
+            in: statement,
+            trackedNames: trackedNames,
+            shadowedNames: shadowedNames
+        )
+    }
+
+    private static func firstTrackedAssignment(
+        in node: some SyntaxProtocol,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        let syntax = Syntax(node)
+        if let expression = syntax.as(ExprSyntax.self),
+           let assignmentParts = assignmentParts(from: expression),
+           let target = trackedAssignmentTarget(from: assignmentParts.leftHandSide),
+           trackedNames.contains(target.propertyName),
+           !target.isShadowed(by: shadowedNames)
+        {
+            return target.propertyName
+        }
+
+        for child in syntax.children(viewMode: .sourceAccurate) {
+            if let propertyName = firstTrackedAssignment(
+                in: child,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            ) {
+                return propertyName
+            }
+        }
+
+        return nil
     }
 
     private static func topLevelLocalNames(

@@ -37,11 +37,19 @@ extension VariableDeclSyntax {
             )
         }
 
-        guard binding.accessorBlock == nil else {
+        let name = pattern.identifier
+
+        if let accessorBlock = binding.accessorBlock {
+            guard !accessorBlock.hasPropertyObserver else {
+                throw DiagnosticsError(
+                    threadSafe: accessorBlock,
+                    id: "propertyObserversUnsupported",
+                    message: "@ThreadSafe does not support property observers on stored property '\(name.text)' in 1.0."
+                )
+            }
+
             return .ignored
         }
-
-        let name = pattern.identifier
 
         guard attributes.allSatisfy({ $0.isThreadSafePropertyAttribute }) else {
             throw DiagnosticsError(
@@ -98,6 +106,23 @@ extension VariableDeclSyntax {
 
     var hasThreadSafePropertyAttribute: Bool {
         attributes.contains { $0.isThreadSafePropertyAttribute }
+    }
+}
+
+private extension AccessorBlockSyntax {
+    var hasPropertyObserver: Bool {
+        guard case .accessors(let accessors) = accessors else {
+            return false
+        }
+
+        return accessors.contains { accessor in
+            switch accessor.accessorSpecifier.tokenKind {
+            case .keyword(.willSet), .keyword(.didSet):
+                return true
+            default:
+                return false
+            }
+        }
     }
 }
 

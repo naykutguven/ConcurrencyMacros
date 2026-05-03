@@ -275,6 +275,29 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Diagnoses nested assignment to defaulted property before state initialization")
+    func diagnosesNestedDefaultedAssignmentBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, flag: Bool) {
+                    if flag {
+                        self.name = "Override"
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration,
+            expectedMessage: "Initializer assignment to tracked property 'name' must be a plain top-level assignment before @ThreadSafe state initialization.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
+        )
+    }
+
     @Test("Places internal state initialization first when all tracked properties have defaults")
     func placesInternalStateInitializationFirstWhenAllTrackedPropertiesHaveDefaults() throws {
         let declaration = try initializerInStruct(
