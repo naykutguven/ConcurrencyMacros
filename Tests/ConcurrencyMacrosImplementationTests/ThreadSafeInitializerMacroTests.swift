@@ -394,6 +394,98 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Allows earlier guard condition binding to shadow later condition elements")
+    func allowsEarlierGuardConditionBindingToShadowLaterConditionElements() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, optionalName: String?) {
+                    guard var name = optionalName, ({
+                        name = "Override"
+                        return true
+                    })() else {
+                        return
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                #"let_name:String="Seed""#,
+                #"guardvarname=optionalName,({name="Override"returntrue})()else{return}"#,
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+            ]
+        )
+    }
+
+    @Test("Allows earlier while condition binding to shadow later condition elements")
+    func allowsEarlierWhileConditionBindingToShadowLaterConditionElements() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, optionalName: String?) {
+                    while var name = optionalName, ({
+                        name = "Override"
+                        return false
+                    })() {
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                #"let_name:String="Seed""#,
+                #"whilevarname=optionalName,({name="Override"returnfalse})(){}"#,
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+            ]
+        )
+    }
+
+    @Test("Diagnoses explicit self assignment in later condition element despite earlier binding")
+    func diagnosesExplicitSelfAssignmentInLaterConditionElementDespiteEarlierBinding() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, optionalName: String?) {
+                    if var name = optionalName, ({
+                        self.name = "Override"
+                        return true
+                    })() {
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration,
+            expectedMessage: "Initializer assignment to tracked property 'name' must be a plain top-level assignment before @ThreadSafe state initialization.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
+        )
+    }
+
     @Test("Places internal state initialization first when all tracked properties have defaults")
     func placesInternalStateInitializationFirstWhenAllTrackedPropertiesHaveDefaults() throws {
         let declaration = try initializerInStruct(
