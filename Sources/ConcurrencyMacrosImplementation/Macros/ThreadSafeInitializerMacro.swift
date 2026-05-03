@@ -237,6 +237,46 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             )
         }
 
+        if let closureExpression = syntax.as(ClosureExprSyntax.self) {
+            return firstTrackedPreStateAccess(
+                in: closureExpression,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let forStatement = syntax.as(ForStmtSyntax.self) {
+            return firstTrackedPreStateAccess(
+                in: forStatement,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let switchCase = syntax.as(SwitchCaseSyntax.self) {
+            return firstTrackedPreStateAccess(
+                in: switchCase,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let catchClause = syntax.as(CatchClauseSyntax.self) {
+            return firstTrackedPreStateAccess(
+                in: catchClause,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let functionDeclaration = syntax.as(FunctionDeclSyntax.self) {
+            return firstTrackedPreStateAccess(
+                in: functionDeclaration,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
+        }
+
         if let statements = syntax.as(CodeBlockItemListSyntax.self) {
             var blockShadowedNames = shadowedNames
 
@@ -256,12 +296,9 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         if let memberAccessExpression = syntax.as(MemberAccessExprSyntax.self) {
-            if let baseExpression = memberAccessExpression.base?.as(DeclReferenceExprSyntax.self),
-               baseExpression.baseName.text == "self" {
-                let propertyName = memberAccessExpression.declName.baseName.text
-                if trackedNames.contains(propertyName) {
-                    return propertyName
-                }
+            if let propertyName = explicitSelfPropertyName(in: memberAccessExpression),
+               trackedNames.contains(propertyName) {
+                return propertyName
             }
 
             guard let base = memberAccessExpression.base else {
@@ -269,7 +306,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             }
 
             return firstTrackedPreStateAccess(
-                in: base,
+                in: normalizedExpression(base),
                 trackedNames: trackedNames,
                 shadowedNames: shadowedNames
             )
@@ -293,6 +330,237 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         return nil
+    }
+
+    private static func firstTrackedPreStateAccess(
+        in closureExpression: ClosureExprSyntax,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        if let capture = closureExpression.signature?.capture,
+           let propertyName = firstTrackedPreStateAccess(
+               in: capture,
+               trackedNames: trackedNames,
+               shadowedNames: shadowedNames
+           ) {
+            return propertyName
+        }
+
+        var closureShadowedNames = shadowedNames
+        if let signature = closureExpression.signature {
+            closureShadowedNames.formUnion(closureParameterLocalNames(in: signature, trackedNames: trackedNames))
+        }
+
+        return firstTrackedPreStateAccess(
+            in: closureExpression.statements,
+            trackedNames: trackedNames,
+            shadowedNames: closureShadowedNames
+        )
+    }
+
+    private static func firstTrackedPreStateAccess(
+        in forStatement: ForStmtSyntax,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        if let propertyName = firstTrackedPreStateAccess(
+            in: forStatement.sequence,
+            trackedNames: trackedNames,
+            shadowedNames: shadowedNames
+        ) {
+            return propertyName
+        }
+
+        var bodyShadowedNames = shadowedNames
+        bodyShadowedNames.formUnion(localNames(in: forStatement.pattern).filter { trackedNames.contains($0) })
+
+        if let whereClause = forStatement.whereClause,
+           let propertyName = firstTrackedPreStateAccess(
+               in: whereClause,
+               trackedNames: trackedNames,
+               shadowedNames: bodyShadowedNames
+           ) {
+            return propertyName
+        }
+
+        return firstTrackedPreStateAccess(
+            in: forStatement.body.statements,
+            trackedNames: trackedNames,
+            shadowedNames: bodyShadowedNames
+        )
+    }
+
+    private static func firstTrackedPreStateAccess(
+        in switchCase: SwitchCaseSyntax,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        var caseShadowedNames = shadowedNames
+
+        if let caseLabel = switchCase.label.as(SwitchCaseLabelSyntax.self) {
+            for caseItem in caseLabel.caseItems {
+                caseShadowedNames.formUnion(localNames(in: caseItem.pattern).filter { trackedNames.contains($0) })
+            }
+
+            for caseItem in caseLabel.caseItems {
+                if let whereClause = caseItem.whereClause,
+                   let propertyName = firstTrackedPreStateAccess(
+                       in: whereClause,
+                       trackedNames: trackedNames,
+                       shadowedNames: caseShadowedNames
+                   ) {
+                    return propertyName
+                }
+            }
+        }
+
+        return firstTrackedPreStateAccess(
+            in: switchCase.statements,
+            trackedNames: trackedNames,
+            shadowedNames: caseShadowedNames
+        )
+    }
+
+    private static func firstTrackedPreStateAccess(
+        in catchClause: CatchClauseSyntax,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        var catchShadowedNames = shadowedNames
+
+        for catchItem in catchClause.catchItems {
+            if let pattern = catchItem.pattern {
+                catchShadowedNames.formUnion(localNames(in: pattern).filter { trackedNames.contains($0) })
+            }
+        }
+
+        for catchItem in catchClause.catchItems {
+            if let whereClause = catchItem.whereClause,
+               let propertyName = firstTrackedPreStateAccess(
+                   in: whereClause,
+                   trackedNames: trackedNames,
+                   shadowedNames: catchShadowedNames
+               ) {
+                return propertyName
+            }
+        }
+
+        return firstTrackedPreStateAccess(
+            in: catchClause.body.statements,
+            trackedNames: trackedNames,
+            shadowedNames: catchShadowedNames
+        )
+    }
+
+    private static func firstTrackedPreStateAccess(
+        in functionDeclaration: FunctionDeclSyntax,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        for parameter in functionDeclaration.signature.parameterClause.parameters {
+            if let defaultValue = parameter.defaultValue,
+               let propertyName = firstTrackedPreStateAccess(
+                   in: defaultValue.value,
+                   trackedNames: trackedNames,
+                   shadowedNames: shadowedNames
+               ) {
+                return propertyName
+            }
+        }
+
+        guard let body = functionDeclaration.body else {
+            return nil
+        }
+
+        var bodyShadowedNames = shadowedNames
+        bodyShadowedNames.formUnion(functionParameterLocalNames(
+            in: functionDeclaration.signature.parameterClause,
+            trackedNames: trackedNames
+        ))
+
+        return firstTrackedPreStateAccess(
+            in: body.statements,
+            trackedNames: trackedNames,
+            shadowedNames: bodyShadowedNames
+        )
+    }
+
+    private static func explicitSelfPropertyName(in memberAccessExpression: MemberAccessExprSyntax) -> String? {
+        guard
+            let base = memberAccessExpression.base,
+            let baseExpression = normalizedExpression(base).as(DeclReferenceExprSyntax.self),
+            baseExpression.baseName.text == "self"
+        else {
+            return nil
+        }
+
+        return memberAccessExpression.declName.baseName.text
+    }
+
+    private static func normalizedExpression(_ expression: ExprSyntax) -> ExprSyntax {
+        var expression = expression
+
+        while
+            let tupleExpression = expression.as(TupleExprSyntax.self),
+            tupleExpression.elements.count == 1,
+            let element = tupleExpression.elements.first,
+            element.label == nil
+        {
+            expression = element.expression
+        }
+
+        return expression
+    }
+
+    private static func closureParameterLocalNames(
+        in signature: ClosureSignatureSyntax,
+        trackedNames: Set<String>
+    ) -> Set<String> {
+        guard let parameterClause = signature.parameterClause else {
+            return []
+        }
+
+        switch parameterClause {
+        case .simpleInput(let parameters):
+            return Set(
+                parameters.compactMap { parameter in
+                    let name = parameter.name.text
+                    guard name != "_", trackedNames.contains(name) else {
+                        return nil
+                    }
+
+                    return name
+                }
+            )
+
+        case .parameterClause(let parameterClause):
+            return Set(
+                parameterClause.parameters.compactMap { parameter in
+                    let name = parameter.secondName?.text ?? parameter.firstName.text
+                    guard name != "_", trackedNames.contains(name) else {
+                        return nil
+                    }
+
+                    return name
+                }
+            )
+        }
+    }
+
+    private static func functionParameterLocalNames(
+        in parameterClause: FunctionParameterClauseSyntax,
+        trackedNames: Set<String>
+    ) -> Set<String> {
+        Set(
+            parameterClause.parameters.compactMap { parameter in
+                let name = parameter.secondName?.text ?? parameter.firstName.text
+                guard name != "_", trackedNames.contains(name) else {
+                    return nil
+                }
+
+                return name
+            }
+        )
     }
 
     private static func firstTrackedPreStateAccess(
@@ -429,18 +697,24 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             return localNames(in: guardStatement.conditions, trackedNames: trackedNames)
         }
 
-        guard
-            case .decl(let declaration) = statement.item,
-            let variable = declaration.as(VariableDeclSyntax.self)
-        else {
+        guard case .decl(let declaration) = statement.item else {
             return []
         }
 
-        return Set(
-            variable.bindings.flatMap { binding in
-                localNames(in: binding.pattern).filter { trackedNames.contains($0) }
-            }
-        )
+        if let variable = declaration.as(VariableDeclSyntax.self) {
+            return Set(
+                variable.bindings.flatMap { binding in
+                    localNames(in: binding.pattern).filter { trackedNames.contains($0) }
+                }
+            )
+        }
+
+        if let function = declaration.as(FunctionDeclSyntax.self),
+           trackedNames.contains(function.name.text) {
+            return [function.name.text]
+        }
+
+        return []
     }
 
     private static func localNames(in pattern: PatternSyntax) -> [String] {
@@ -539,19 +813,20 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
     }
 
     private static func trackedAssignmentTarget(from expression: ExprSyntax) -> TrackedAssignmentTarget? {
+        let expression = normalizedExpression(expression)
+
         if let referenceExpression = expression.as(DeclReferenceExprSyntax.self) {
             return .bare(referenceExpression.baseName.text)
         }
 
         guard
             let memberAccessExpression = expression.as(MemberAccessExprSyntax.self),
-            let baseExpression = memberAccessExpression.base?.as(DeclReferenceExprSyntax.self),
-            baseExpression.baseName.text == "self"
+            let propertyName = explicitSelfPropertyName(in: memberAccessExpression)
         else {
             return nil
         }
 
-        return .explicitSelf(memberAccessExpression.declName.baseName.text)
+        return .explicitSelf(propertyName)
     }
 
     private enum TrackedAssignmentTarget {
