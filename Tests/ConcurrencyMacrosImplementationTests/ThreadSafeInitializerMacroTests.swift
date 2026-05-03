@@ -339,6 +339,78 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Allows assignment RHS member name matching tracked property before state initialization")
+    func allowsAssignmentRHSMemberNameMatchingTrackedPropertyBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(name: String) {
+                    self.count = name.count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                "_count=name.count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+            ]
+        )
+    }
+
+    @Test("Allows assignment RHS member name matching tracked property on untracked base before state initialization")
+    func allowsAssignmentRHSMemberNameMatchingTrackedPropertyOnUntrackedBaseBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(other: String) {
+                    self.count = other.count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                "_count=other.count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+            ]
+        )
+    }
+
+    @Test("Diagnoses assignment RHS member access rooted in unshadowed tracked property before state initialization")
+    func diagnosesAssignmentRHSMemberAccessRootedInUnshadowedTrackedPropertyBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init() {
+                    self.count = name.value
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<ExampleName>(value: ExampleName())])"#,
+            for: declaration,
+            expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
+        )
+    }
+
     @Test("Diagnoses non-plain tracked property mutation before state initialization")
     func diagnosesNonPlainTrackedPropertyMutationBeforeStateInitialization() throws {
         let declaration = try initializerInStruct(

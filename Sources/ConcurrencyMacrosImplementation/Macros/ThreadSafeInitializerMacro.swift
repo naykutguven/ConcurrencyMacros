@@ -255,13 +255,24 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             return nil
         }
 
-        if let memberAccessExpression = syntax.as(MemberAccessExprSyntax.self),
-           let baseExpression = memberAccessExpression.base?.as(DeclReferenceExprSyntax.self),
-           baseExpression.baseName.text == "self" {
-            let propertyName = memberAccessExpression.declName.baseName.text
-            if trackedNames.contains(propertyName) {
-                return propertyName
+        if let memberAccessExpression = syntax.as(MemberAccessExprSyntax.self) {
+            if let baseExpression = memberAccessExpression.base?.as(DeclReferenceExprSyntax.self),
+               baseExpression.baseName.text == "self" {
+                let propertyName = memberAccessExpression.declName.baseName.text
+                if trackedNames.contains(propertyName) {
+                    return propertyName
+                }
             }
+
+            guard let base = memberAccessExpression.base else {
+                return nil
+            }
+
+            return firstTrackedPreStateAccess(
+                in: base,
+                trackedNames: trackedNames,
+                shadowedNames: shadowedNames
+            )
         }
 
         if let referenceExpression = syntax.as(DeclReferenceExprSyntax.self) {
