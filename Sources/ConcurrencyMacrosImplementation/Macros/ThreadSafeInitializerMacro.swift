@@ -279,21 +279,19 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         trackedNames: Set<String>,
         shadowedNames: Set<String>
     ) -> String? {
-        if let propertyName = firstTrackedAssignment(
+        let conditionScan = scanConditionElements(
             in: ifExpression.conditions,
             trackedNames: trackedNames,
             shadowedNames: shadowedNames
-        ) {
+        )
+        if let propertyName = conditionScan.unsupportedAssignment {
             return propertyName
         }
 
-        let bodyShadowedNames = shadowedNames.union(
-            localNames(in: ifExpression.conditions, trackedNames: trackedNames)
-        )
         if let propertyName = firstTrackedAssignment(
             in: ifExpression.body.statements,
             trackedNames: trackedNames,
-            shadowedNames: bodyShadowedNames
+            shadowedNames: conditionScan.shadowedNames
         ) {
             return propertyName
         }
@@ -322,11 +320,12 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         trackedNames: Set<String>,
         shadowedNames: Set<String>
     ) -> String? {
-        if let propertyName = firstTrackedAssignment(
+        let conditionScan = scanConditionElements(
             in: guardStatement.conditions,
             trackedNames: trackedNames,
             shadowedNames: shadowedNames
-        ) {
+        )
+        if let propertyName = conditionScan.unsupportedAssignment {
             return propertyName
         }
 
@@ -342,22 +341,42 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         trackedNames: Set<String>,
         shadowedNames: Set<String>
     ) -> String? {
-        if let propertyName = firstTrackedAssignment(
+        let conditionScan = scanConditionElements(
             in: whileStatement.conditions,
             trackedNames: trackedNames,
             shadowedNames: shadowedNames
-        ) {
+        )
+        if let propertyName = conditionScan.unsupportedAssignment {
             return propertyName
         }
 
-        let bodyShadowedNames = shadowedNames.union(
-            localNames(in: whileStatement.conditions, trackedNames: trackedNames)
-        )
         return firstTrackedAssignment(
             in: whileStatement.body.statements,
             trackedNames: trackedNames,
-            shadowedNames: bodyShadowedNames
+            shadowedNames: conditionScan.shadowedNames
         )
+    }
+
+    private static func scanConditionElements(
+        in conditions: ConditionElementListSyntax,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> (unsupportedAssignment: String?, shadowedNames: Set<String>) {
+        var conditionShadowedNames = shadowedNames
+
+        for condition in conditions {
+            if let propertyName = firstTrackedAssignment(
+                in: condition,
+                trackedNames: trackedNames,
+                shadowedNames: conditionShadowedNames
+            ) {
+                return (unsupportedAssignment: propertyName, shadowedNames: conditionShadowedNames)
+            }
+
+            conditionShadowedNames.formUnion(localNames(in: condition, trackedNames: trackedNames))
+        }
+
+        return (unsupportedAssignment: nil, shadowedNames: conditionShadowedNames)
     }
 
     private static func topLevelLocalNames(
@@ -407,13 +426,20 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
     ) -> Set<String> {
         Set(
             conditions.flatMap { conditionElement in
-                guard let optionalBinding = conditionElement.condition.as(OptionalBindingConditionSyntax.self) else {
-                    return [String]()
-                }
-
-                return localNames(in: optionalBinding.pattern).filter { trackedNames.contains($0) }
+                localNames(in: conditionElement, trackedNames: trackedNames)
             }
         )
+    }
+
+    private static func localNames(
+        in conditionElement: ConditionElementSyntax,
+        trackedNames: Set<String>
+    ) -> [String] {
+        guard let optionalBinding = conditionElement.condition.as(OptionalBindingConditionSyntax.self) else {
+            return []
+        }
+
+        return localNames(in: optionalBinding.pattern).filter { trackedNames.contains($0) }
     }
 
     private static func assignmentParts(from expression: ExprSyntax) -> (leftHandSide: ExprSyntax, rightHandSide: ExprSyntax)? {
