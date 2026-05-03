@@ -293,7 +293,69 @@ struct ThreadSafeInitializerMacroTests {
         try assertInitializerDiagnostic(
             attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration,
-            expectedMessage: "Initializer assignment to tracked property 'name' must be a plain top-level assignment before @ThreadSafe state initialization.",
+            expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
+        )
+    }
+
+    @Test("Diagnoses explicit tracked property read before state initialization")
+    func diagnosesExplicitTrackedPropertyReadBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    print(self.name)
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration,
+            expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
+        )
+    }
+
+    @Test("Diagnoses tracked property read on supported assignment RHS before state initialization")
+    func diagnosesTrackedPropertyReadOnSupportedAssignmentRHSBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init() {
+                    self.count = self.name.count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration,
+            expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
+        )
+    }
+
+    @Test("Diagnoses non-plain tracked property mutation before state initialization")
+    func diagnosesNonPlainTrackedPropertyMutationBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, value: String) {
+                    self.items[0] = value
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "items": Storage<[String]>(value: [])])"#,
+            for: declaration,
+            expectedMessage: "Initializer access to tracked property 'items' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
         )
     }
@@ -394,6 +456,39 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Allows earlier case condition binding to shadow later condition elements")
+    func allowsEarlierCaseConditionBindingToShadowLaterConditionElements() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, optionalName: String?) {
+                    if case var name? = optionalName, ({
+                        name = "Override"
+                        return true
+                    })() {
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                #"let_name:String="Seed""#,
+                #"ifcasevarname?=optionalName,({name="Override"returntrue})(){}"#,
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+            ]
+        )
+    }
+
     @Test("Allows earlier guard condition binding to shadow later condition elements")
     func allowsEarlierGuardConditionBindingToShadowLaterConditionElements() throws {
         let declaration = try initializerInStruct(
@@ -481,7 +576,32 @@ struct ThreadSafeInitializerMacroTests {
         try assertInitializerDiagnostic(
             attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration,
-            expectedMessage: "Initializer assignment to tracked property 'name' must be a plain top-level assignment before @ThreadSafe state initialization.",
+            expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
+        )
+    }
+
+    @Test("Diagnoses explicit self access in later condition element despite earlier case binding")
+    func diagnosesExplicitSelfAccessInLaterConditionElementDespiteEarlierCaseBinding() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, optionalName: String?) {
+                    if case var name? = optionalName, ({
+                        print(self.name)
+                        return true
+                    })() {
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration,
+            expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
         )
     }

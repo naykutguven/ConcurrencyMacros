@@ -106,16 +106,19 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             .map(\.key)
             .max() ?? -1
 
-        var preStateShadowedTrackedNames = Set<String>()
+        var preStateShadowedTrackedNames = initializerParameterLocalNames(
+            in: declaration,
+            trackedNames: trackedNames
+        )
         for (offset, statement) in decl.statements.enumerated() where offset <= lastRequiredAssignmentOffset {
-            let unsupportedAssignment = unsupportedPreStateAssignment(
+            let unsupportedAccess = unsupportedPreStateAccess(
                 in: statement,
                 topLevelAssignment: trackedAssignmentsByOffset[offset],
                 trackedNames: trackedNames,
                 shadowedNames: preStateShadowedTrackedNames
             )
 
-            guard let unsupportedAssignment else {
+            guard let unsupportedAccess else {
                 preStateShadowedTrackedNames.formUnion(topLevelLocalNames(in: statement, trackedNames: trackedNames))
                 continue
             }
@@ -123,7 +126,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             throw DiagnosticsError(
                 threadSafe: statement,
                 id: "unsupportedInitializerAssignment",
-                message: "Initializer assignment to tracked property '\(unsupportedAssignment)' must be a plain top-level assignment before @ThreadSafe state initialization."
+                message: "Initializer access to tracked property '\(unsupportedAccess)' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment."
             )
         }
 
@@ -182,28 +185,28 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         return TrackedAssignment(propertyName: target.propertyName, rightHandSide: assignmentParts.rightHandSide)
     }
 
-    private static func unsupportedPreStateAssignment(
+    private static func unsupportedPreStateAccess(
         in statement: CodeBlockItemSyntax,
         topLevelAssignment: TrackedAssignment?,
         trackedNames: Set<String>,
         shadowedNames: Set<String>
     ) -> String? {
         if let topLevelAssignment {
-            return firstTrackedAssignment(
+            return firstTrackedPreStateAccess(
                 in: topLevelAssignment.rightHandSide,
                 trackedNames: trackedNames,
                 shadowedNames: shadowedNames
             )
         }
 
-        return firstTrackedAssignment(
+        return firstTrackedPreStateAccess(
             in: statement,
             trackedNames: trackedNames,
             shadowedNames: shadowedNames
         )
     }
 
-    private static func firstTrackedAssignment(
+    private static func firstTrackedPreStateAccess(
         in node: some SyntaxProtocol,
         trackedNames: Set<String>,
         shadowedNames: Set<String>
@@ -211,7 +214,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         let syntax = Syntax(node)
 
         if let ifExpression = syntax.as(IfExprSyntax.self) {
-            return firstTrackedAssignment(
+            return firstTrackedPreStateAccess(
                 in: ifExpression,
                 trackedNames: trackedNames,
                 shadowedNames: shadowedNames
@@ -219,7 +222,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         if let guardStatement = syntax.as(GuardStmtSyntax.self) {
-            return firstTrackedAssignment(
+            return firstTrackedPreStateAccess(
                 in: guardStatement,
                 trackedNames: trackedNames,
                 shadowedNames: shadowedNames
@@ -227,7 +230,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         if let whileStatement = syntax.as(WhileStmtSyntax.self) {
-            return firstTrackedAssignment(
+            return firstTrackedPreStateAccess(
                 in: whileStatement,
                 trackedNames: trackedNames,
                 shadowedNames: shadowedNames
@@ -238,7 +241,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             var blockShadowedNames = shadowedNames
 
             for statement in statements {
-                if let propertyName = firstTrackedAssignment(
+                if let propertyName = firstTrackedPreStateAccess(
                     in: statement,
                     trackedNames: trackedNames,
                     shadowedNames: blockShadowedNames
@@ -252,17 +255,24 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             return nil
         }
 
-        if let expression = syntax.as(ExprSyntax.self),
-           let assignmentParts = assignmentParts(from: expression),
-           let target = trackedAssignmentTarget(from: assignmentParts.leftHandSide),
-           trackedNames.contains(target.propertyName),
-           !target.isShadowed(by: shadowedNames)
-        {
-            return target.propertyName
+        if let memberAccessExpression = syntax.as(MemberAccessExprSyntax.self),
+           let baseExpression = memberAccessExpression.base?.as(DeclReferenceExprSyntax.self),
+           baseExpression.baseName.text == "self" {
+            let propertyName = memberAccessExpression.declName.baseName.text
+            if trackedNames.contains(propertyName) {
+                return propertyName
+            }
+        }
+
+        if let referenceExpression = syntax.as(DeclReferenceExprSyntax.self) {
+            let propertyName = referenceExpression.baseName.text
+            if trackedNames.contains(propertyName), !shadowedNames.contains(propertyName) {
+                return propertyName
+            }
         }
 
         for child in syntax.children(viewMode: .sourceAccurate) {
-            if let propertyName = firstTrackedAssignment(
+            if let propertyName = firstTrackedPreStateAccess(
                 in: child,
                 trackedNames: trackedNames,
                 shadowedNames: shadowedNames
@@ -274,7 +284,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         return nil
     }
 
-    private static func firstTrackedAssignment(
+    private static func firstTrackedPreStateAccess(
         in ifExpression: IfExprSyntax,
         trackedNames: Set<String>,
         shadowedNames: Set<String>
@@ -284,11 +294,11 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             trackedNames: trackedNames,
             shadowedNames: shadowedNames
         )
-        if let propertyName = conditionScan.unsupportedAssignment {
+        if let propertyName = conditionScan.unsupportedAccess {
             return propertyName
         }
 
-        if let propertyName = firstTrackedAssignment(
+        if let propertyName = firstTrackedPreStateAccess(
             in: ifExpression.body.statements,
             trackedNames: trackedNames,
             shadowedNames: conditionScan.shadowedNames
@@ -297,7 +307,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         if let elseIfExpression = ifExpression.elseBody?.as(IfExprSyntax.self) {
-            return firstTrackedAssignment(
+            return firstTrackedPreStateAccess(
                 in: elseIfExpression,
                 trackedNames: trackedNames,
                 shadowedNames: shadowedNames
@@ -305,7 +315,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         if let elseBlock = ifExpression.elseBody?.as(CodeBlockSyntax.self) {
-            return firstTrackedAssignment(
+            return firstTrackedPreStateAccess(
                 in: elseBlock.statements,
                 trackedNames: trackedNames,
                 shadowedNames: shadowedNames
@@ -315,7 +325,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         return nil
     }
 
-    private static func firstTrackedAssignment(
+    private static func firstTrackedPreStateAccess(
         in guardStatement: GuardStmtSyntax,
         trackedNames: Set<String>,
         shadowedNames: Set<String>
@@ -325,18 +335,18 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             trackedNames: trackedNames,
             shadowedNames: shadowedNames
         )
-        if let propertyName = conditionScan.unsupportedAssignment {
+        if let propertyName = conditionScan.unsupportedAccess {
             return propertyName
         }
 
-        return firstTrackedAssignment(
+        return firstTrackedPreStateAccess(
             in: guardStatement.body.statements,
             trackedNames: trackedNames,
             shadowedNames: shadowedNames
         )
     }
 
-    private static func firstTrackedAssignment(
+    private static func firstTrackedPreStateAccess(
         in whileStatement: WhileStmtSyntax,
         trackedNames: Set<String>,
         shadowedNames: Set<String>
@@ -346,11 +356,11 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             trackedNames: trackedNames,
             shadowedNames: shadowedNames
         )
-        if let propertyName = conditionScan.unsupportedAssignment {
+        if let propertyName = conditionScan.unsupportedAccess {
             return propertyName
         }
 
-        return firstTrackedAssignment(
+        return firstTrackedPreStateAccess(
             in: whileStatement.body.statements,
             trackedNames: trackedNames,
             shadowedNames: conditionScan.shadowedNames
@@ -361,22 +371,42 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         in conditions: ConditionElementListSyntax,
         trackedNames: Set<String>,
         shadowedNames: Set<String>
-    ) -> (unsupportedAssignment: String?, shadowedNames: Set<String>) {
+    ) -> (unsupportedAccess: String?, shadowedNames: Set<String>) {
         var conditionShadowedNames = shadowedNames
 
         for condition in conditions {
-            if let propertyName = firstTrackedAssignment(
+            if let propertyName = firstTrackedPreStateAccess(
                 in: condition,
                 trackedNames: trackedNames,
                 shadowedNames: conditionShadowedNames
             ) {
-                return (unsupportedAssignment: propertyName, shadowedNames: conditionShadowedNames)
+                return (unsupportedAccess: propertyName, shadowedNames: conditionShadowedNames)
             }
 
             conditionShadowedNames.formUnion(localNames(in: condition, trackedNames: trackedNames))
         }
 
-        return (unsupportedAssignment: nil, shadowedNames: conditionShadowedNames)
+        return (unsupportedAccess: nil, shadowedNames: conditionShadowedNames)
+    }
+
+    private static func initializerParameterLocalNames(
+        in declaration: some DeclSyntaxProtocol,
+        trackedNames: Set<String>
+    ) -> Set<String> {
+        guard let initializer = declaration.as(InitializerDeclSyntax.self) else {
+            return []
+        }
+
+        return Set(
+            initializer.signature.parameterClause.parameters.compactMap { parameter -> String? in
+                let localName = parameter.secondName?.text ?? parameter.firstName.text
+                guard localName != "_", trackedNames.contains(localName) else {
+                    return nil
+                }
+
+                return localName
+            }
+        )
     }
 
     private static func topLevelLocalNames(
@@ -417,6 +447,26 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             return localNames(in: valueBindingPattern.pattern)
         }
 
+        if let expressionPattern = pattern.as(ExpressionPatternSyntax.self) {
+            return localNames(inPatternExpression: expressionPattern.expression)
+        }
+
+        return []
+    }
+
+    private static func localNames(inPatternExpression expression: ExprSyntax) -> [String] {
+        if let referenceExpression = expression.as(DeclReferenceExprSyntax.self) {
+            return [referenceExpression.baseName.text]
+        }
+
+        if let optionalChainingExpression = expression.as(OptionalChainingExprSyntax.self) {
+            return localNames(inPatternExpression: optionalChainingExpression.expression)
+        }
+
+        if let patternExpression = expression.as(PatternExprSyntax.self) {
+            return localNames(in: patternExpression.pattern)
+        }
+
         return []
     }
 
@@ -435,11 +485,15 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         in conditionElement: ConditionElementSyntax,
         trackedNames: Set<String>
     ) -> [String] {
-        guard let optionalBinding = conditionElement.condition.as(OptionalBindingConditionSyntax.self) else {
-            return []
+        if let optionalBinding = conditionElement.condition.as(OptionalBindingConditionSyntax.self) {
+            return localNames(in: optionalBinding.pattern).filter { trackedNames.contains($0) }
         }
 
-        return localNames(in: optionalBinding.pattern).filter { trackedNames.contains($0) }
+        if let matchingPattern = conditionElement.condition.as(MatchingPatternConditionSyntax.self) {
+            return localNames(in: matchingPattern.pattern).filter { trackedNames.contains($0) }
+        }
+
+        return []
     }
 
     private static func assignmentParts(from expression: ExprSyntax) -> (leftHandSide: ExprSyntax, rightHandSide: ExprSyntax)? {
