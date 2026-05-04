@@ -35,38 +35,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
 
         let elements = dictExpr.content.as(DictionaryElementListSyntax.self) ?? DictionaryElementListSyntax()
 
-        let trackedProperties: [TrackedProperty] = elements.compactMap { element in
-            // Parse the key
-            guard
-                let stringLiteral = element.key.as(StringLiteralExprSyntax.self),
-                let firstSegment = stringLiteral.segments.first?.as(StringSegmentSyntax.self)
-            else {
-                return nil
-            }
-
-            let keyName = firstSegment.content.text
-
-            // Parse the type
-            guard
-                let callExpr = element.value.as(FunctionCallExprSyntax.self),
-                let genericType = callExpr.calledExpression.as(GenericSpecializationExprSyntax.self),
-                let typeName = genericType.genericArgumentClause.arguments.first?.argument.trimmedDescription
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            else {
-                return nil
-            }
-
-            // Parse the optional default value
-            var defaultValue: String? = nil
-            for arg in callExpr.arguments {
-                if arg.label?.text == "value" {
-                    defaultValue = arg.expression.trimmedDescription
-                }
-            }
-            if defaultValue == nil, typeName.hasSuffix("?") { defaultValue = "nil" }
-
-            return TrackedProperty(name: keyName, type: typeName, defaultValue: defaultValue)
-        }
+        let trackedProperties = try elements.map(parseTrackedProperty)
 
         let trackedNames = Set(trackedProperties.map(\.name))
         let requiredNames = Set(trackedProperties.filter(\.isRequired).map(\.name))
@@ -183,6 +152,31 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         return TrackedAssignment(propertyName: target.propertyName, rightHandSide: assignmentParts.rightHandSide)
+    }
+
+    private static func parseTrackedProperty(from element: DictionaryElementSyntax) throws -> TrackedProperty {
+        guard
+            let stringLiteral = element.key.as(StringLiteralExprSyntax.self),
+            let firstSegment = stringLiteral.segments.first?.as(StringSegmentSyntax.self),
+            let callExpr = element.value.as(FunctionCallExprSyntax.self),
+            let genericType = callExpr.calledExpression.as(GenericSpecializationExprSyntax.self),
+            let typeName = genericType.genericArgumentClause.arguments.first?.argument.trimmedDescription
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        else {
+            throw DiagnosticsError(
+                threadSafe: element,
+                id: "invalidInitializerPayload",
+                message: "@ThreadSafeInitializer entries must use string keys and generic storage values."
+            )
+        }
+
+        var defaultValue: String? = nil
+        for arg in callExpr.arguments where arg.label?.text == "value" {
+            defaultValue = arg.expression.trimmedDescription
+        }
+        if defaultValue == nil, typeName.hasSuffix("?") { defaultValue = "nil" }
+
+        return TrackedProperty(name: firstSegment.content.text, type: typeName, defaultValue: defaultValue)
     }
 
     private static func unsupportedPreStateAccess(

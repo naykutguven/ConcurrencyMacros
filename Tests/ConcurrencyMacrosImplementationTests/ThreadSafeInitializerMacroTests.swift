@@ -1046,8 +1046,8 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
-    @Test("Ignores dictionary entries that cannot be parsed")
-    func ignoresUnparsableDictionaryEntries() throws {
+    @Test("Diagnoses dictionary entries with malformed values")
+    func diagnosesDictionaryEntriesWithMalformedValues() throws {
         let declaration = try initializerInStruct(
             """
             struct Example {
@@ -1058,16 +1058,31 @@ struct ThreadSafeInitializerMacroTests {
             """
         )
 
-        let expanded = try expandBody(
+        try assertInitializerDiagnostic(
             attributeSource: #"@ThreadSafeInitializer(["count": makeStorage(), invalidKey: Storage<Int>()])"#,
-            for: declaration
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+        )
+    }
+
+    @Test("Diagnoses dictionary entries with malformed keys")
+    func diagnosesDictionaryEntriesWithMalformedKeys() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    self.count = count
+                }
+            }
+            """
         )
 
-        #expect(
-            expanded.map(\.nonWhitespaceDescription) == [
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State())",
-                "self.count=count",
-            ]
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer([invalidKey: Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
         )
     }
 }

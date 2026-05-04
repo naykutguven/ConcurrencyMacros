@@ -28,7 +28,13 @@ public struct ThreadSafeMacro: MemberMacro {
         conformingTo _: [TypeSyntax],
         in _: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
-        guard let classDecl = declaration.as(ClassDeclSyntax.self) else { return [] }
+        guard let classDecl = declaration.as(ClassDeclSyntax.self) else {
+            throw DiagnosticsError(
+                threadSafe: declaration,
+                id: "invalidAttachment",
+                message: "@ThreadSafe can only be attached to class declarations."
+            )
+        }
         let storedProperties = try classDecl.threadSafeStoredProperties()
 
         var members = [DeclSyntax]()
@@ -94,6 +100,8 @@ extension ThreadSafeMacro: MemberAttributeMacro {
         providingAttributesFor member: some DeclSyntaxProtocol,
         in _: some MacroExpansionContext
     ) throws -> [AttributeSyntax] {
+        guard let classDecl = group.as(ClassDeclSyntax.self) else { return [] }
+
         // Add @ThreadSafeProperty to stored var properties
         if let property = member.as(VariableDeclSyntax.self) {
             switch try property.threadSafeStoredProperty() {
@@ -117,7 +125,6 @@ extension ThreadSafeMacro: MemberAttributeMacro {
         // Add @ThreadSafeInitializer to initializers (not convenience ones)
         if let initDecl = member.as(InitializerDeclSyntax.self),
            !initDecl.modifiers.contains(where: { $0.name.text == "convenience" }) {
-            guard let classDecl = group.as(ClassDeclSyntax.self) else { return [] }
             let storedProperties = try classDecl.threadSafeStoredProperties()
 
             let argumentListExpr: String = {

@@ -21,8 +21,8 @@ struct ThreadSafeMacroTests {
         )
     }
 
-    @Test("Returns no members when declaration is not a class")
-    func returnsNoMembersForNonClassDeclaration() throws {
+    @Test("Diagnoses non-class member expansion")
+    func diagnosesNonClassMemberExpansion() throws {
         let declaration = try firstDeclaration(
             in: """
             struct Example {
@@ -31,9 +31,13 @@ struct ThreadSafeMacroTests {
             """
         )
 
-        let expanded = try expandMembers(for: declaration)
-
-        #expect(expanded.isEmpty)
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe can only be attached to class declarations.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidAttachment"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
     }
 
     @Test("Expands ThreadSafe end-to-end with property and initializer rewriting")
@@ -543,6 +547,22 @@ struct ThreadSafeMacroTests {
         let initializer = try declaration.memberDecl(at: 0)
 
         let expanded = try expandAttributes(attachedTo: declaration, member: initializer)
+
+        #expect(expanded.isEmpty)
+    }
+
+    @Test("Returns no property attributes when attached declaration group is not a class")
+    func returnsNoPropertyAttributesForNonClassGroups() throws {
+        let declaration = try structDeclaration(
+            in: """
+            struct Example {
+                var count: Int = 0
+            }
+            """
+        )
+        let property = try declaration.memberDecl(at: 0)
+
+        let expanded = try expandAttributes(attachedTo: declaration, member: property)
 
         #expect(expanded.isEmpty)
     }
