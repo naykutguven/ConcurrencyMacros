@@ -55,7 +55,11 @@ extension VariableDeclSyntax {
                 )
             }
 
-            return .ignored
+            throw DiagnosticsError(
+                threadSafe: accessorBlock,
+                id: "computedPropertyUnsupported",
+                message: "@ThreadSafe does not support computed property '\(name.text)' in 1.0."
+            )
         }
 
         guard attributes.allSatisfy({ $0.isThreadSafePropertyAttribute }) else {

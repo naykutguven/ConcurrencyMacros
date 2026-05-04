@@ -243,8 +243,8 @@ struct ThreadSafeMacroTests {
         }
     }
 
-    @Test("Ignores computed properties because they are not stored state")
-    func ignoresComputedPropertiesBecauseTheyAreNotStoredState() throws {
+    @Test("Diagnoses computed properties because they are not stored state")
+    func diagnosesComputedPropertiesBecauseTheyAreNotStoredState() throws {
         let declaration = try classDeclaration(
             in: """
             class Example {
@@ -253,11 +253,13 @@ struct ThreadSafeMacroTests {
             """
         )
 
-        let expanded = try expandMembers(for: declaration)
-
-        #expect(expanded.count == 3)
-        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=ConcurrencyMacros.Mutex<_State>(_State())")
-        #expect(expanded[1].nonWhitespaceDescription == "privatestruct_State:Sendable{}")
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe does not support computed property 'computed' in 1.0.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "computedPropertyUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
     }
 
     @Test("Diagnoses observers on mutable stored properties")

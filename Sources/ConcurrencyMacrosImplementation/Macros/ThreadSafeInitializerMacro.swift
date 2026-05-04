@@ -55,7 +55,10 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         let requiredNames = Set(trackedProperties.filter(\.isRequired).map(\.name))
         var trackedAssignmentsByOffset: [Int: TrackedAssignment] = [:]
         var assignedRequiredNames = Set<String>()
-        var shadowedTrackedNames = Set<String>()
+        var shadowedTrackedNames = initializerInoutParameterLocalNames(
+            in: declaration,
+            trackedNames: trackedNames
+        )
 
         for (offset, statement) in decl.statements.enumerated() {
             defer {
@@ -187,10 +190,20 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             let keySegment = stringLiteral.segments.first?.as(StringSegmentSyntax.self),
             let callExpr = element.value.as(FunctionCallExprSyntax.self),
             let genericType = callExpr.calledExpression.as(GenericSpecializationExprSyntax.self),
-            let typeName = genericType.genericArgumentClause.arguments.first?.argument.trimmedDescription
-                .trimmingCharacters(in: .whitespacesAndNewlines),
+            genericType.genericArgumentClause.arguments.count == 1,
+            let genericArgument = genericType.genericArgumentClause.arguments.first,
             keySegment.content.text.isValidThreadSafeIdentifier
         else {
+            throw DiagnosticsError(
+                threadSafe: element,
+                id: "invalidInitializerPayload",
+                message: "@ThreadSafeInitializer entries must use string keys and generic storage values."
+            )
+        }
+
+        let typeName = genericArgument.argument.trimmedDescription
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typeName.isEmpty else {
             throw DiagnosticsError(
                 threadSafe: element,
                 id: "invalidInitializerPayload",
@@ -839,6 +852,9 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
 
         var closureShadowedNames = shadowedNames
         if let signature = closureExpression.signature {
+            if let capture = signature.capture {
+                closureShadowedNames.formUnion(closureCaptureAliasLocalNames(in: capture, names: trackedNames))
+            }
             closureShadowedNames.formUnion(closureParameterLocalNames(in: signature, trackedNames: trackedNames))
         }
 
@@ -1222,6 +1238,30 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         )
     }
 
+    private static func initializerInoutParameterLocalNames(
+        in declaration: some DeclSyntaxProtocol,
+        trackedNames: Set<String>
+    ) -> Set<String> {
+        guard let initializer = declaration.as(InitializerDeclSyntax.self) else {
+            return []
+        }
+
+        return Set(
+            initializer.signature.parameterClause.parameters.compactMap { parameter -> String? in
+                let localName = parameter.secondName?.text ?? parameter.firstName.text
+                guard
+                    localName != "_",
+                    trackedNames.contains(localName),
+                    parameter.type.hasInoutSpecifier
+                else {
+                    return nil
+                }
+
+                return localName
+            }
+        )
+    }
+
     private static func initializerParameterNames(in declaration: some DeclSyntaxProtocol) -> Set<String> {
         guard let initializer = declaration.as(InitializerDeclSyntax.self) else {
             return []
@@ -1443,6 +1483,18 @@ private struct TrackedProperty {
 private struct TrackedAssignment {
     let propertyName: String
     let rightHandSide: ExprSyntax
+}
+
+private extension TypeSyntax {
+    var hasInoutSpecifier: Bool {
+        guard let attributedType = self.as(AttributedTypeSyntax.self) else {
+            return false
+        }
+
+        return attributedType.specifiers.contains { specifier in
+            specifier.as(SimpleTypeSpecifierSyntax.self)?.specifier.text == "inout"
+        }
+    }
 }
 
 private extension String {

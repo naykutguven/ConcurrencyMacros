@@ -393,6 +393,34 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Does not rewrite bare assignments to initializer parameters shadowing tracked properties")
+    func doesNotRewriteBareAssignmentsToInitializerParametersShadowingTrackedProperties() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: inout Int) {
+                    count = 1
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                "count=1",
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+            ]
+        )
+    }
+
     @Test("Does not rewrite bare assignments after a top-level tuple local declaration shadows a tracked property")
     func doesNotRewriteBareAssignmentsAfterTopLevelTupleLocalDeclarationShadowsTrackedProperty() throws {
         let declaration = try initializerInStruct(
@@ -625,6 +653,33 @@ struct ThreadSafeInitializerMacroTests {
                 "var_count:Int",
                 #"let_name:String="Seed""#,
                 "_count=values.map{nameinname.count}.reduce(0,+)",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+            ]
+        )
+    }
+
+    @Test("Allows closure capture alias to shadow tracked property before state initialization")
+    func allowsClosureCaptureAliasToShadowTrackedPropertyBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init() {
+                    self.count = { [name = "Temp"] in name.count }()
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                #"let_name:String="Seed""#,
+                #"_count={[name="Temp"]inname.count}()"#,
                 "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
             ]
         )
@@ -1252,6 +1307,26 @@ struct ThreadSafeInitializerMacroTests {
 
         try assertInitializerDiagnostic(
             attributeSource: #"@ThreadSafeInitializer(["count": makeStorage(), invalidKey: Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+        )
+    }
+
+    @Test("Diagnoses dictionary entries with multi-argument generic values")
+    func diagnosesDictionaryEntriesWithMultiArgumentGenericValues() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int, String>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
