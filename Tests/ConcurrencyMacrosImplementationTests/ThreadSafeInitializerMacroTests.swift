@@ -1085,6 +1085,47 @@ struct ThreadSafeInitializerMacroTests {
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
         )
     }
+
+    @Test("Diagnoses dictionary entries with interpolated keys")
+    func diagnosesDictionaryEntriesWithInterpolatedKeys() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count\(suffix)": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+        )
+    }
+
+    @Test("Diagnoses mixed payloads with an interpolated key after a valid entry")
+    func diagnosesMixedPayloadsWithInterpolatedKeyAfterValidEntry() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, name: String) {
+                    self.count = count
+                    self.name = name
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name\(suffix)": Storage<String>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+        )
+    }
 }
 
 // MARK: - Private Helpers

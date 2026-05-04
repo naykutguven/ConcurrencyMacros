@@ -157,7 +157,8 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
     private static func parseTrackedProperty(from element: DictionaryElementSyntax) throws -> TrackedProperty {
         guard
             let stringLiteral = element.key.as(StringLiteralExprSyntax.self),
-            let firstSegment = stringLiteral.segments.first?.as(StringSegmentSyntax.self),
+            stringLiteral.segments.count == 1,
+            let keySegment = stringLiteral.segments.first?.as(StringSegmentSyntax.self),
             let callExpr = element.value.as(FunctionCallExprSyntax.self),
             let genericType = callExpr.calledExpression.as(GenericSpecializationExprSyntax.self),
             let typeName = genericType.genericArgumentClause.arguments.first?.argument.trimmedDescription
@@ -176,7 +177,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
         if defaultValue == nil, typeName.hasSuffix("?") { defaultValue = "nil" }
 
-        return TrackedProperty(name: firstSegment.content.text, type: typeName, defaultValue: defaultValue)
+        return TrackedProperty(name: keySegment.content.text, type: typeName, defaultValue: defaultValue)
     }
 
     private static func unsupportedPreStateAccess(
