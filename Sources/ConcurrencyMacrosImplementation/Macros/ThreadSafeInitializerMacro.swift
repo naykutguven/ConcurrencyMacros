@@ -657,6 +657,14 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         var conditionShadowedNames = shadowedNames
 
         for condition in conditions {
+            if let propertyName = shorthandOptionalBindingTrackedAccess(
+                in: condition,
+                trackedNames: trackedNames,
+                shadowedNames: conditionShadowedNames
+            ) {
+                return (unsupportedAccess: propertyName, shadowedNames: conditionShadowedNames)
+            }
+
             if let propertyName = firstTrackedPreStateAccess(
                 in: condition,
                 trackedNames: trackedNames,
@@ -669,6 +677,22 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         return (unsupportedAccess: nil, shadowedNames: conditionShadowedNames)
+    }
+
+    private static func shorthandOptionalBindingTrackedAccess(
+        in conditionElement: ConditionElementSyntax,
+        trackedNames: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        guard
+            let optionalBinding = conditionElement.condition.as(OptionalBindingConditionSyntax.self),
+            optionalBinding.initializer == nil
+        else {
+            return nil
+        }
+
+        return localNames(in: optionalBinding.pattern)
+            .first { trackedNames.contains($0) && !shadowedNames.contains($0) }
     }
 
     private static func initializerParameterLocalNames(

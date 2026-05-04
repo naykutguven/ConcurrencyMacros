@@ -677,6 +677,108 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Diagnoses if shorthand optional binding of unshadowed tracked property before state initialization")
+    func diagnosesIfShorthandOptionalBindingOfUnshadowedTrackedPropertyBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    if let name {
+                        print(name)
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String?>()])"#,
+            for: declaration,
+            expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
+        )
+    }
+
+    @Test("Diagnoses guard shorthand optional binding of unshadowed tracked property before state initialization")
+    func diagnosesGuardShorthandOptionalBindingOfUnshadowedTrackedPropertyBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    guard let name else {
+                        return
+                    }
+                    print(name)
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String?>()])"#,
+            for: declaration,
+            expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
+        )
+    }
+
+    @Test("Diagnoses while shorthand optional binding of unshadowed tracked property before state initialization")
+    func diagnosesWhileShorthandOptionalBindingOfUnshadowedTrackedPropertyBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    while let name {
+                        print(name)
+                        break
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String?>()])"#,
+            for: declaration,
+            expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
+        )
+    }
+
+    @Test("Allows shorthand optional binding of shadowed tracked property before state initialization")
+    func allowsShorthandOptionalBindingOfShadowedTrackedPropertyBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, name: String?) {
+                    if let name {
+                        print(name)
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String?>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                "let_name:String?=nil",
+                "ifletname{print(name)}",
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+            ]
+        )
+    }
+
     @Test("Allows earlier condition binding to shadow later condition elements")
     func allowsEarlierConditionBindingToShadowLaterConditionElements() throws {
         let declaration = try initializerInStruct(
