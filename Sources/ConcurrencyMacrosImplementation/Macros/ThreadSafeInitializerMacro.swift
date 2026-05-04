@@ -473,6 +473,9 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         var bodyShadowedNames = shadowedNames
+        if trackedNames.contains(functionDeclaration.name.text) {
+            bodyShadowedNames.insert(functionDeclaration.name.text)
+        }
         bodyShadowedNames.formUnion(functionParameterLocalNames(
             in: functionDeclaration.signature.parameterClause,
             trackedNames: trackedNames
@@ -740,6 +743,8 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
     }
 
     private static func localNames(inPatternExpression expression: ExprSyntax) -> [String] {
+        let expression = normalizedExpression(expression)
+
         if let referenceExpression = expression.as(DeclReferenceExprSyntax.self) {
             return [referenceExpression.baseName.text]
         }
@@ -750,6 +755,12 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
 
         if let patternExpression = expression.as(PatternExprSyntax.self) {
             return localNames(in: patternExpression.pattern)
+        }
+
+        if let functionCallExpression = expression.as(FunctionCallExprSyntax.self) {
+            return functionCallExpression.arguments.flatMap { argument in
+                localNames(inPatternExpression: argument.expression)
+            }
         }
 
         return []

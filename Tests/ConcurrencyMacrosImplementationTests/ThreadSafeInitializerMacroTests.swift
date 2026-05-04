@@ -469,6 +469,68 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Allows local function name to shadow tracked property inside its own body before state initialization")
+    func allowsLocalFunctionNameToShadowTrackedPropertyInsideItsOwnBodyBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    func name() {
+                        name()
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                #"let_name:String="Seed""#,
+                "funcname(){name()}",
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+            ]
+        )
+    }
+
+    @Test("Allows for enum case pattern binding to shadow tracked property before state initialization")
+    func allowsForEnumCasePatternBindingToShadowTrackedPropertyBeforeStateInitialization() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, values: [String?]) {
+                    for case let .some(name) in values {
+                        print(name)
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                #"let_name:String="Seed""#,
+                "forcaselet.some(name)invalues{print(name)}",
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+            ]
+        )
+    }
+
     @Test("Diagnoses unshadowed tracked root inside closure before state initialization")
     func diagnosesUnshadowedTrackedRootInsideClosureBeforeStateInitialization() throws {
         let declaration = try initializerInStruct(
@@ -675,6 +737,39 @@ struct ThreadSafeInitializerMacroTests {
                 "var_count:Int",
                 #"let_name:String="Seed""#,
                 #"ifcasevarname?=optionalName,({name="Override"returntrue})(){}"#,
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+            ]
+        )
+    }
+
+    @Test("Allows earlier enum case condition binding to shadow later condition elements")
+    func allowsEarlierEnumCaseConditionBindingToShadowLaterConditionElements() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, optionalName: String?) {
+                    if case let .some(name) = optionalName, ({
+                        name = "Override"
+                        return true
+                    })() {
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                #"let_name:String="Seed""#,
+                #"ifcaselet.some(name)=optionalName,({name="Override"returntrue})(){}"#,
                 "_count=count",
                 "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
             ]
