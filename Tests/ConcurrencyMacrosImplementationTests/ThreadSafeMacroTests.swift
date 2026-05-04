@@ -283,6 +283,29 @@ struct ThreadSafeMacroTests {
         )
     }
 
+    @Test("Diagnoses tracked property names that conflict with synthesized storage")
+    func diagnosesTrackedPropertyNamesThatConflictWithSynthesizedStorage() throws {
+        let cases = ["_state", "_State", "inLock"]
+
+        for propertyName in cases {
+            let declaration = try classDeclaration(
+                in: """
+                class Example {
+                    var \(propertyName): Int = 0
+                }
+                """
+            )
+
+            try assertThreadSafeDiagnostic(
+                expectedMessage: "@ThreadSafe property name '\(propertyName)' conflicts with synthesized storage; rename the property.",
+                expectedID: MessageID(domain: "ThreadSafeMacro", id: "reservedPropertyName"),
+                operation: {
+                    _ = try expandMembers(for: declaration)
+                }
+            )
+        }
+    }
+
     @Test("Tracks stored properties with access-control modifiers")
     func tracksStoredPropertiesWithAccessControlModifiers() throws {
         let declaration = try classDeclaration(

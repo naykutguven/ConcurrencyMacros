@@ -52,8 +52,8 @@ struct ThreadSafeInitializerMacroTests {
         #expect(expanded.isEmpty)
     }
 
-    @Test("Leaves body unchanged when first argument is not a dictionary")
-    func leavesBodyUnchangedForNonDictionaryArgument() throws {
+    @Test("Diagnoses first argument that is not a dictionary")
+    func diagnosesNonDictionaryArgument() throws {
         let declaration = try initializerInStruct(
             """
             struct Example {
@@ -65,16 +65,73 @@ struct ThreadSafeInitializerMacroTests {
             """
         )
 
-        let expanded = try expandBody(
+        try assertInitializerDiagnostic(
             attributeSource: #"@ThreadSafeInitializer("value")"#,
-            for: declaration
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
         )
-        let originalBody = try #require(declaration.body)
-        let originalStatements = originalBody.statements.compactMap { CodeBlockItemSyntax($0) }
+    }
 
-        #expect(
-            expanded.map(\.nonWhitespaceDescription)
-                == originalStatements.map(\.nonWhitespaceDescription)
+    @Test("Diagnoses staging local collision with initializer parameter")
+    func diagnosesStagingLocalCollisionWithInitializerParameter() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(_count: Int, count: Int) {
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter or top-level local; rename the parameter or local.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
+        )
+    }
+
+    @Test("Diagnoses staging local collision with top-level local declaration")
+    func diagnosesStagingLocalCollisionWithTopLevelLocalDeclaration() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    let _count = count
+                    self.count = _count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter or top-level local; rename the parameter or local.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
+        )
+    }
+
+    @Test("Diagnoses staging local collision with top-level local function")
+    func diagnosesStagingLocalCollisionWithTopLevelLocalFunction() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    func _count() -> Int { count }
+                    self.count = _count()
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter or top-level local; rename the parameter or local.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
         )
     }
 
@@ -1100,6 +1157,46 @@ struct ThreadSafeInitializerMacroTests {
 
         try assertInitializerDiagnostic(
             attributeSource: #"@ThreadSafeInitializer(["count\(suffix)": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+        )
+    }
+
+    @Test("Diagnoses dictionary entries with empty string keys")
+    func diagnosesDictionaryEntriesWithEmptyStringKeys() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+        )
+    }
+
+    @Test("Diagnoses dictionary entries with non-identifier string keys")
+    func diagnosesDictionaryEntriesWithNonIdentifierStringKeys() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["not valid": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")

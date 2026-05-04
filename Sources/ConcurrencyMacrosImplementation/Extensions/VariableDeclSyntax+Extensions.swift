@@ -38,6 +38,13 @@ extension VariableDeclSyntax {
         }
 
         let name = pattern.identifier
+        if name.isReservedThreadSafeStoredPropertyName {
+            throw DiagnosticsError(
+                threadSafe: pattern,
+                id: "reservedPropertyName",
+                message: "@ThreadSafe property name '\(name.text)' conflicts with synthesized storage; rename the property."
+            )
+        }
 
         if let accessorBlock = binding.accessorBlock {
             guard !accessorBlock.hasPropertyObserver else {
@@ -106,6 +113,17 @@ extension VariableDeclSyntax {
 
     var hasThreadSafePropertyAttribute: Bool {
         attributes.contains { $0.isThreadSafePropertyAttribute }
+    }
+}
+
+private extension TokenSyntax {
+    var isReservedThreadSafeStoredPropertyName: Bool {
+        switch text {
+        case "_state", "_State", "inLock":
+            return true
+        default:
+            return false
+        }
     }
 }
 

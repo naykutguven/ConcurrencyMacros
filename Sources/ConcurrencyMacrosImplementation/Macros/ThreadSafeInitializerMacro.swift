@@ -29,13 +29,27 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         // Parse arguments
         guard let dictExpr = argument.expression.as(DictionaryExprSyntax.self)
         else {
-            // Not a dictionary => do nothing
-            return decl.statements.compactMap { CodeBlockItemSyntax($0) }
+            throw DiagnosticsError(
+                threadSafe: argument.expression,
+                id: "invalidInitializerPayload",
+                message: "@ThreadSafeInitializer entries must use string keys and generic storage values."
+            )
         }
 
         let elements = dictExpr.content.as(DictionaryElementListSyntax.self) ?? DictionaryElementListSyntax()
 
         let trackedProperties = try elements.map(parseTrackedProperty)
+        if let collidingStagingName = stagingNameCollision(
+            in: declaration,
+            statements: decl.statements,
+            trackedProperties: trackedProperties
+        ) {
+            throw DiagnosticsError(
+                threadSafe: declaration,
+                id: "stagingNameCollision",
+                message: "@ThreadSafeInitializer staging local '\(collidingStagingName)' conflicts with an initializer parameter or top-level local; rename the parameter or local."
+            )
+        }
 
         let trackedNames = Set(trackedProperties.map(\.name))
         let requiredNames = Set(trackedProperties.filter(\.isRequired).map(\.name))
@@ -162,7 +176,8 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             let callExpr = element.value.as(FunctionCallExprSyntax.self),
             let genericType = callExpr.calledExpression.as(GenericSpecializationExprSyntax.self),
             let typeName = genericType.genericArgumentClause.arguments.first?.argument.trimmedDescription
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            keySegment.content.text.isValidThreadSafeIdentifier
         else {
             throw DiagnosticsError(
                 threadSafe: element,
@@ -178,6 +193,30 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         if defaultValue == nil, typeName.hasSuffix("?") { defaultValue = "nil" }
 
         return TrackedProperty(name: keySegment.content.text, type: typeName, defaultValue: defaultValue)
+    }
+
+    private static func stagingNameCollision(
+        in declaration: some DeclSyntaxProtocol,
+        statements: CodeBlockItemListSyntax,
+        trackedProperties: [TrackedProperty]
+    ) -> String? {
+        let initializerLocals = initializerParameterNames(in: declaration)
+
+        for property in trackedProperties {
+            let stagingName = "_\(property.name)"
+            if initializerLocals.contains(stagingName) {
+                return stagingName
+            }
+        }
+
+        var topLevelLocalNames = Set<String>()
+        for statement in statements {
+            topLevelLocalNames.formUnion(topLevelDeclarationLocalNames(in: statement))
+        }
+
+        return trackedProperties
+            .map { "_\($0.name)" }
+            .first { topLevelLocalNames.contains($0) }
     }
 
     private static func unsupportedPreStateAccess(
@@ -710,6 +749,43 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         )
     }
 
+    private static func initializerParameterNames(in declaration: some DeclSyntaxProtocol) -> Set<String> {
+        guard let initializer = declaration.as(InitializerDeclSyntax.self) else {
+            return []
+        }
+
+        return Set(
+            initializer.signature.parameterClause.parameters.compactMap { parameter -> String? in
+                let localName = parameter.secondName?.text ?? parameter.firstName.text
+                guard localName != "_" else {
+                    return nil
+                }
+
+                return localName
+            }
+        )
+    }
+
+    private static func topLevelDeclarationLocalNames(in statement: CodeBlockItemSyntax) -> Set<String> {
+        guard case .decl(let declaration) = statement.item else {
+            return []
+        }
+
+        if let variable = declaration.as(VariableDeclSyntax.self) {
+            return Set(
+                variable.bindings.flatMap { binding in
+                    localNames(in: binding.pattern)
+                }
+            )
+        }
+
+        if let function = declaration.as(FunctionDeclSyntax.self) {
+            return [function.name.text]
+        }
+
+        return []
+    }
+
     private static func topLevelLocalNames(
         in statement: CodeBlockItemSyntax,
         trackedNames: Set<String>
@@ -894,4 +970,18 @@ private struct TrackedProperty {
 private struct TrackedAssignment {
     let propertyName: String
     let rightHandSide: ExprSyntax
+}
+
+private extension String {
+    var isValidThreadSafeIdentifier: Bool {
+        guard let firstScalar = unicodeScalars.first else {
+            return false
+        }
+
+        let identifierHead = CharacterSet.letters.union(CharacterSet(charactersIn: "_"))
+        let identifierBody = identifierHead.union(.decimalDigits)
+
+        return identifierHead.contains(firstScalar)
+            && unicodeScalars.dropFirst().allSatisfy { identifierBody.contains($0) }
+    }
 }
