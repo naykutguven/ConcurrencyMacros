@@ -88,7 +88,7 @@ struct ThreadSafeInitializerMacroTests {
         try assertInitializerDiagnostic(
             attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
             for: declaration,
-            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter or top-level local; rename the parameter or local.",
+            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
         )
     }
@@ -109,7 +109,7 @@ struct ThreadSafeInitializerMacroTests {
         try assertInitializerDiagnostic(
             attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
             for: declaration,
-            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter or top-level local; rename the parameter or local.",
+            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
         )
     }
@@ -130,8 +130,80 @@ struct ThreadSafeInitializerMacroTests {
         try assertInitializerDiagnostic(
             attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
             for: declaration,
-            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter or top-level local; rename the parameter or local.",
+            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
+        )
+    }
+
+    @Test("Diagnoses staging local collision with tracked property name")
+    func diagnosesStagingLocalCollisionWithTrackedPropertyName() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, underscoredCount: Int) {
+                    self.count = count
+                    self._count = underscoredCount
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "_count": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
+        )
+    }
+
+    @Test("Diagnoses post-state bare reference to staging local")
+    func diagnosesPostStateBareReferenceToStagingLocal() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    self.count = count
+                    print(_count)
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
+        )
+    }
+
+    @Test("Allows post-state closure parameter to shadow staging local")
+    func allowsPostStateClosureParameterToShadowStagingLocal() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, values: [String]) {
+                    self.count = count
+                    let lengths = values.map { _count in _count.count }
+                    print(lengths)
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "letlengths=values.map{_countin_count.count}",
+                "print(lengths)",
+            ]
         )
     }
 

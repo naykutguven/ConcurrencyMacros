@@ -344,6 +344,51 @@ struct ThreadSafeMacroTests {
         #expect(expanded[2].nonWhitespaceDescription.contains("_state.mutate(mutation)"))
     }
 
+    @Test("Generates initialized internal state when class has only convenience initializers")
+    func generatesInitializedInternalStateWithOnlyConvenienceInitializers() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var count: Int = 0
+
+                convenience init(flag: Bool) {
+                    self.init()
+                }
+            }
+            """
+        )
+
+        let expanded = try expandMembers(for: declaration)
+
+        #expect(expanded.count == 3)
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=ConcurrencyMacros.Mutex<_State>(_State(count:0))")
+        #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
+        #expect(expanded[2].nonWhitespaceDescription.contains("_state.mutate(mutation)"))
+    }
+
+    @Test("Diagnoses required tracked property when class has only convenience initializers")
+    func diagnosesRequiredTrackedPropertyWithOnlyConvenienceInitializers() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var count: Int
+
+                convenience init(flag: Bool) {
+                    self.init()
+                }
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "Property 'count' must have a default value or the class must define an initializer.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "missingDefaultValue"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
     @Test("ThreadSafeDiagnostic exposes stable metadata")
     func threadSafeDiagnosticExposesStableMetadata() {
         let diagnostic = ThreadSafeDiagnostic(id: "example", message: "Example")

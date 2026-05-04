@@ -39,13 +39,20 @@ public struct ThreadSafeMacro: MemberMacro {
 
         var members = [DeclSyntax]()
 
-        let hasInitializer = classDecl.memberBlock.members.contains(where: { $0.decl.as(InitializerDeclSyntax.self) != nil })
-        if !hasInitializer {
+        let hasDesignatedInitializer = classDecl.memberBlock.members.contains { member in
+            guard let initializer = member.decl.as(InitializerDeclSyntax.self) else {
+                return false
+            }
+
+            return !initializer.isConvenience
+        }
+        if !hasDesignatedInitializer {
             // Generate and initialize _state property
             let variables = try storedProperties.map { property in
                 guard let defaultValue = property.defaultValueDescription else {
                     throw DiagnosticsError(
-                        syntax: classDecl,
+                        threadSafe: classDecl,
+                        id: "missingDefaultValue",
                         message: "Property '\(property.nameText)' must have a default value or the class must define an initializer."
                     )
                 }
@@ -124,7 +131,7 @@ extension ThreadSafeMacro: MemberAttributeMacro {
 
         // Add @ThreadSafeInitializer to initializers (not convenience ones)
         if let initDecl = member.as(InitializerDeclSyntax.self),
-           !initDecl.modifiers.contains(where: { $0.name.text == "convenience" }) {
+           !initDecl.isConvenience {
             let storedProperties = try classDecl.threadSafeStoredProperties()
 
             let argumentListExpr: String = {
@@ -157,5 +164,11 @@ extension ThreadSafeMacro: MemberAttributeMacro {
         }
 
         return []
+    }
+}
+
+private extension InitializerDeclSyntax {
+    var isConvenience: Bool {
+        modifiers.contains(where: { $0.name.text == "convenience" })
     }
 }

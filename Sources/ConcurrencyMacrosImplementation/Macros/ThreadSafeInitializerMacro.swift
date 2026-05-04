@@ -47,7 +47,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             throw DiagnosticsError(
                 threadSafe: declaration,
                 id: "stagingNameCollision",
-                message: "@ThreadSafeInitializer staging local '\(collidingStagingName)' conflicts with an initializer parameter or top-level local; rename the parameter or local."
+                message: stagingNameCollisionMessage(for: collidingStagingName)
             )
         }
 
@@ -88,6 +88,18 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             .filter { requiredNames.contains($0.value.propertyName) }
             .map(\.key)
             .max() ?? -1
+
+        if let collidingStagingName = postStateStagingNameReference(
+            in: decl.statements,
+            after: lastRequiredAssignmentOffset,
+            stagingNames: Set(trackedProperties.map { "_\($0.name)" })
+        ) {
+            throw DiagnosticsError(
+                threadSafe: declaration,
+                id: "stagingNameCollision",
+                message: stagingNameCollisionMessage(for: collidingStagingName)
+            )
+        }
 
         var preStateShadowedTrackedNames = initializerParameterLocalNames(
             in: declaration,
@@ -201,10 +213,11 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         trackedProperties: [TrackedProperty]
     ) -> String? {
         let initializerLocals = initializerParameterNames(in: declaration)
+        let trackedNames = Set(trackedProperties.map(\.name))
 
         for property in trackedProperties {
             let stagingName = "_\(property.name)"
-            if initializerLocals.contains(stagingName) {
+            if initializerLocals.contains(stagingName) || trackedNames.contains(stagingName) {
                 return stagingName
             }
         }
@@ -217,6 +230,434 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         return trackedProperties
             .map { "_\($0.name)" }
             .first { topLevelLocalNames.contains($0) }
+    }
+
+    private static func stagingNameCollisionMessage(for stagingName: String) -> String {
+        "@ThreadSafeInitializer staging local '\(stagingName)' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local."
+    }
+
+    private static func postStateStagingNameReference(
+        in statements: CodeBlockItemListSyntax,
+        after lastRequiredAssignmentOffset: Int,
+        stagingNames: Set<String>
+    ) -> String? {
+        for (offset, statement) in statements.enumerated() where offset > lastRequiredAssignmentOffset {
+            if let name = firstUnshadowedBareReference(
+                in: statement,
+                names: stagingNames,
+                shadowedNames: []
+            ) {
+                return name
+            }
+        }
+
+        return nil
+    }
+
+    private static func firstUnshadowedBareReference(
+        in node: some SyntaxProtocol,
+        names: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        let syntax = Syntax(node)
+
+        if let ifExpression = syntax.as(IfExprSyntax.self) {
+            return firstUnshadowedBareReference(
+                in: ifExpression,
+                names: names,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let guardStatement = syntax.as(GuardStmtSyntax.self) {
+            return firstUnshadowedBareReference(
+                in: guardStatement,
+                names: names,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let whileStatement = syntax.as(WhileStmtSyntax.self) {
+            return firstUnshadowedBareReference(
+                in: whileStatement,
+                names: names,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let closureExpression = syntax.as(ClosureExprSyntax.self) {
+            return firstUnshadowedBareReference(
+                in: closureExpression,
+                names: names,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let forStatement = syntax.as(ForStmtSyntax.self) {
+            return firstUnshadowedBareReference(
+                in: forStatement,
+                names: names,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let switchCase = syntax.as(SwitchCaseSyntax.self) {
+            return firstUnshadowedBareReference(
+                in: switchCase,
+                names: names,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let catchClause = syntax.as(CatchClauseSyntax.self) {
+            return firstUnshadowedBareReference(
+                in: catchClause,
+                names: names,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let functionDeclaration = syntax.as(FunctionDeclSyntax.self) {
+            return firstUnshadowedBareReference(
+                in: functionDeclaration,
+                names: names,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let statements = syntax.as(CodeBlockItemListSyntax.self) {
+            var blockShadowedNames = shadowedNames
+
+            for statement in statements {
+                if let name = firstUnshadowedBareReference(
+                    in: statement,
+                    names: names,
+                    shadowedNames: blockShadowedNames
+                ) {
+                    return name
+                }
+
+                blockShadowedNames.formUnion(topLevelLocalNames(in: statement, trackedNames: names))
+            }
+
+            return nil
+        }
+
+        if let memberAccessExpression = syntax.as(MemberAccessExprSyntax.self) {
+            guard let base = memberAccessExpression.base else {
+                return nil
+            }
+
+            return firstUnshadowedBareReference(
+                in: normalizedExpression(base),
+                names: names,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let referenceExpression = syntax.as(DeclReferenceExprSyntax.self) {
+            let name = referenceExpression.baseName.text
+            if names.contains(name), !shadowedNames.contains(name) {
+                return name
+            }
+        }
+
+        for child in syntax.children(viewMode: .sourceAccurate) {
+            if let name = firstUnshadowedBareReference(
+                in: child,
+                names: names,
+                shadowedNames: shadowedNames
+            ) {
+                return name
+            }
+        }
+
+        return nil
+    }
+
+    private static func firstUnshadowedBareReference(
+        in closureExpression: ClosureExprSyntax,
+        names: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        if let capture = closureExpression.signature?.capture,
+           let name = firstUnshadowedBareReference(
+               in: capture,
+               names: names,
+               shadowedNames: shadowedNames
+           ) {
+            return name
+        }
+
+        var closureShadowedNames = shadowedNames
+        if let signature = closureExpression.signature {
+            closureShadowedNames.formUnion(closureParameterLocalNames(in: signature, trackedNames: names))
+        }
+
+        return firstUnshadowedBareReference(
+            in: closureExpression.statements,
+            names: names,
+            shadowedNames: closureShadowedNames
+        )
+    }
+
+    private static func firstUnshadowedBareReference(
+        in forStatement: ForStmtSyntax,
+        names: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        if let name = firstUnshadowedBareReference(
+            in: forStatement.sequence,
+            names: names,
+            shadowedNames: shadowedNames
+        ) {
+            return name
+        }
+
+        var bodyShadowedNames = shadowedNames
+        bodyShadowedNames.formUnion(localNames(in: forStatement.pattern).filter { names.contains($0) })
+
+        if let whereClause = forStatement.whereClause,
+           let name = firstUnshadowedBareReference(
+               in: whereClause,
+               names: names,
+               shadowedNames: bodyShadowedNames
+           ) {
+            return name
+        }
+
+        return firstUnshadowedBareReference(
+            in: forStatement.body.statements,
+            names: names,
+            shadowedNames: bodyShadowedNames
+        )
+    }
+
+    private static func firstUnshadowedBareReference(
+        in switchCase: SwitchCaseSyntax,
+        names: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        var caseShadowedNames = shadowedNames
+
+        if let caseLabel = switchCase.label.as(SwitchCaseLabelSyntax.self) {
+            for caseItem in caseLabel.caseItems {
+                caseShadowedNames.formUnion(localNames(in: caseItem.pattern).filter { names.contains($0) })
+            }
+
+            for caseItem in caseLabel.caseItems {
+                if let whereClause = caseItem.whereClause,
+                   let name = firstUnshadowedBareReference(
+                       in: whereClause,
+                       names: names,
+                       shadowedNames: caseShadowedNames
+                   ) {
+                    return name
+                }
+            }
+        }
+
+        return firstUnshadowedBareReference(
+            in: switchCase.statements,
+            names: names,
+            shadowedNames: caseShadowedNames
+        )
+    }
+
+    private static func firstUnshadowedBareReference(
+        in catchClause: CatchClauseSyntax,
+        names: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        var catchShadowedNames = shadowedNames
+
+        for catchItem in catchClause.catchItems {
+            if let pattern = catchItem.pattern {
+                catchShadowedNames.formUnion(localNames(in: pattern).filter { names.contains($0) })
+            }
+        }
+
+        for catchItem in catchClause.catchItems {
+            if let whereClause = catchItem.whereClause,
+               let name = firstUnshadowedBareReference(
+                   in: whereClause,
+                   names: names,
+                   shadowedNames: catchShadowedNames
+               ) {
+                return name
+            }
+        }
+
+        return firstUnshadowedBareReference(
+            in: catchClause.body.statements,
+            names: names,
+            shadowedNames: catchShadowedNames
+        )
+    }
+
+    private static func firstUnshadowedBareReference(
+        in functionDeclaration: FunctionDeclSyntax,
+        names: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        for parameter in functionDeclaration.signature.parameterClause.parameters {
+            if let defaultValue = parameter.defaultValue,
+               let name = firstUnshadowedBareReference(
+                   in: defaultValue.value,
+                   names: names,
+                   shadowedNames: shadowedNames
+               ) {
+                return name
+            }
+        }
+
+        guard let body = functionDeclaration.body else {
+            return nil
+        }
+
+        var bodyShadowedNames = shadowedNames
+        if names.contains(functionDeclaration.name.text) {
+            bodyShadowedNames.insert(functionDeclaration.name.text)
+        }
+        bodyShadowedNames.formUnion(functionParameterLocalNames(
+            in: functionDeclaration.signature.parameterClause,
+            trackedNames: names
+        ))
+
+        return firstUnshadowedBareReference(
+            in: body.statements,
+            names: names,
+            shadowedNames: bodyShadowedNames
+        )
+    }
+
+    private static func firstUnshadowedBareReference(
+        in ifExpression: IfExprSyntax,
+        names: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        let conditionScan = scanConditionElementsForBareReference(
+            in: ifExpression.conditions,
+            names: names,
+            shadowedNames: shadowedNames
+        )
+        if let name = conditionScan.reference {
+            return name
+        }
+
+        if let name = firstUnshadowedBareReference(
+            in: ifExpression.body.statements,
+            names: names,
+            shadowedNames: conditionScan.shadowedNames
+        ) {
+            return name
+        }
+
+        if let elseIfExpression = ifExpression.elseBody?.as(IfExprSyntax.self) {
+            return firstUnshadowedBareReference(
+                in: elseIfExpression,
+                names: names,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        if let elseBlock = ifExpression.elseBody?.as(CodeBlockSyntax.self) {
+            return firstUnshadowedBareReference(
+                in: elseBlock.statements,
+                names: names,
+                shadowedNames: shadowedNames
+            )
+        }
+
+        return nil
+    }
+
+    private static func firstUnshadowedBareReference(
+        in guardStatement: GuardStmtSyntax,
+        names: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        let conditionScan = scanConditionElementsForBareReference(
+            in: guardStatement.conditions,
+            names: names,
+            shadowedNames: shadowedNames
+        )
+        if let name = conditionScan.reference {
+            return name
+        }
+
+        return firstUnshadowedBareReference(
+            in: guardStatement.body.statements,
+            names: names,
+            shadowedNames: shadowedNames
+        )
+    }
+
+    private static func firstUnshadowedBareReference(
+        in whileStatement: WhileStmtSyntax,
+        names: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        let conditionScan = scanConditionElementsForBareReference(
+            in: whileStatement.conditions,
+            names: names,
+            shadowedNames: shadowedNames
+        )
+        if let name = conditionScan.reference {
+            return name
+        }
+
+        return firstUnshadowedBareReference(
+            in: whileStatement.body.statements,
+            names: names,
+            shadowedNames: conditionScan.shadowedNames
+        )
+    }
+
+    private static func scanConditionElementsForBareReference(
+        in conditions: ConditionElementListSyntax,
+        names: Set<String>,
+        shadowedNames: Set<String>
+    ) -> (reference: String?, shadowedNames: Set<String>) {
+        var conditionShadowedNames = shadowedNames
+
+        for condition in conditions {
+            if let name = shorthandOptionalBindingBareReference(
+                in: condition,
+                names: names,
+                shadowedNames: conditionShadowedNames
+            ) {
+                return (reference: name, shadowedNames: conditionShadowedNames)
+            }
+
+            if let name = firstUnshadowedBareReference(
+                in: condition,
+                names: names,
+                shadowedNames: conditionShadowedNames
+            ) {
+                return (reference: name, shadowedNames: conditionShadowedNames)
+            }
+
+            conditionShadowedNames.formUnion(localNames(in: condition, trackedNames: names))
+        }
+
+        return (reference: nil, shadowedNames: conditionShadowedNames)
+    }
+
+    private static func shorthandOptionalBindingBareReference(
+        in conditionElement: ConditionElementSyntax,
+        names: Set<String>,
+        shadowedNames: Set<String>
+    ) -> String? {
+        guard
+            let optionalBinding = conditionElement.condition.as(OptionalBindingConditionSyntax.self),
+            optionalBinding.initializer == nil
+        else {
+            return nil
+        }
+
+        return localNames(in: optionalBinding.pattern)
+            .first { names.contains($0) && !shadowedNames.contains($0) }
     }
 
     private static func unsupportedPreStateAccess(
