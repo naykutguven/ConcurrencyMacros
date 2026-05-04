@@ -53,7 +53,7 @@ public struct ThreadSafeMacro: MemberMacro {
                     throw DiagnosticsError(
                         threadSafe: classDecl,
                         id: "missingDefaultValue",
-                        message: "Property '\(property.nameText)' must have a default value or the class must define an initializer."
+                        message: "Property '\(property.nameText)' must have a default value or the class must define a designated initializer."
                     )
                 }
                 return "\(property.nameText): \(defaultValue)"

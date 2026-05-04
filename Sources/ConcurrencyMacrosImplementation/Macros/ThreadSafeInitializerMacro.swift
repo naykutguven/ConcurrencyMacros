@@ -261,6 +261,10 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
     ) -> String? {
         let syntax = Syntax(node)
 
+        if isNestedDeclarationContext(syntax) {
+            return nil
+        }
+
         if let ifExpression = syntax.as(IfExprSyntax.self) {
             return firstUnshadowedBareReference(
                 in: ifExpression,
@@ -391,6 +395,9 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
 
         var closureShadowedNames = shadowedNames
         if let signature = closureExpression.signature {
+            if let capture = signature.capture {
+                closureShadowedNames.formUnion(closureCaptureAliasLocalNames(in: capture, names: names))
+            }
             closureShadowedNames.formUnion(closureParameterLocalNames(in: signature, trackedNames: names))
         }
 
@@ -529,6 +536,15 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             names: names,
             shadowedNames: bodyShadowedNames
         )
+    }
+
+    private static func isNestedDeclarationContext(_ syntax: Syntax) -> Bool {
+        syntax.is(ActorDeclSyntax.self)
+            || syntax.is(ClassDeclSyntax.self)
+            || syntax.is(EnumDeclSyntax.self)
+            || syntax.is(ExtensionDeclSyntax.self)
+            || syntax.is(ProtocolDeclSyntax.self)
+            || syntax.is(StructDeclSyntax.self)
     }
 
     private static func firstUnshadowedBareReference(
@@ -988,6 +1004,22 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         return expression
+    }
+
+    private static func closureCaptureAliasLocalNames(
+        in capture: ClosureCaptureClauseSyntax,
+        names: Set<String>
+    ) -> Set<String> {
+        Set(
+            capture.items.compactMap { item in
+                let name = item.name.text
+                guard item.initializer != nil, name != "_", names.contains(name) else {
+                    return nil
+                }
+
+                return name
+            }
+        )
     }
 
     private static func closureParameterLocalNames(

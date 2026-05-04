@@ -152,7 +152,7 @@ struct ThreadSafeMacroTests {
             let diagnostic = try #require(error.diagnostics.first)
             #expect(
                 diagnostic.message
-                    == "Property 'count' must have a default value or the class must define an initializer."
+                    == "Property 'count' must have a default value or the class must define a designated initializer."
             )
             #expect(diagnostic.diagMessage.severity == .error)
         }
@@ -381,7 +381,7 @@ struct ThreadSafeMacroTests {
         )
 
         try assertThreadSafeDiagnostic(
-            expectedMessage: "Property 'count' must have a default value or the class must define an initializer.",
+            expectedMessage: "Property 'count' must have a default value or the class must define a designated initializer.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "missingDefaultValue"),
             operation: {
                 _ = try expandMembers(for: declaration)

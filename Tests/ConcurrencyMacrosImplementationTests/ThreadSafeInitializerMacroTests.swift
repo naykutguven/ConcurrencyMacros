@@ -207,6 +207,69 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Allows post-state closure capture alias to shadow staging local")
+    func allowsPostStateClosureCaptureAliasToShadowStagingLocal() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    self.count = count
+                    let value = { [_count = 0] in _count }()
+                    print(value)
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "letvalue={[_count=0]in_count}()",
+                "print(value)",
+            ]
+        )
+    }
+
+    @Test("Allows post-state nested type members named like staging locals")
+    func allowsPostStateNestedTypeMembersNamedLikeStagingLocals() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    self.count = count
+                    struct Snapshot {
+                        let _count: Int
+                        var value: Int { _count }
+                    }
+                    print(Snapshot(_count: 1).value)
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                "_count=count",
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "structSnapshot{let_count:Intvarvalue:Int{_count}}",
+                "print(Snapshot(_count:1).value)",
+            ]
+        )
+    }
+
     @Test("Rewrites assignments and initializes internal state after the last required assignment")
     func rewritesAssignmentsAndInitializesInternalState() throws {
         let declaration = try initializerInStruct(
