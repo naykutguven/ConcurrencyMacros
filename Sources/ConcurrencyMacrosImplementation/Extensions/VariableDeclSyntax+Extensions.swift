@@ -197,11 +197,26 @@ private extension AttributeListSyntax {
 }
 
 private extension AttributeSyntax {
+    private static let knownNonWrapperAttributeNames: Set<String> = [
+        "IBInspectable",
+        "IBOutlet",
+        "IBOutletCollection",
+        "GKInspectable",
+        "MainActor",
+        "NSCopying",
+        "NSManaged",
+        "Sendable",
+    ]
+
     // Without type information, the best available signal for wrapper-like attributes is a
     // type-style attribute name such as `Clamped` or `MyModule.Clamped`.
     var likelyPropertyWrapperName: String? {
         let normalizedName = attributeName.trimmedDescription.replacingOccurrences(of: " ", with: "")
         guard let lastComponent = normalizedName.split(separator: ".").last else {
+            return nil
+        }
+
+        guard !Self.knownNonWrapperAttributeNames.contains(String(lastComponent)) else {
             return nil
         }
 

@@ -114,6 +114,29 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Diagnoses staging local collision with top-level guard binding")
+    func diagnosesStagingLocalCollisionWithTopLevelGuardBinding() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, optionalCount: Int?) {
+                    guard let _count = optionalCount else {
+                        return
+                    }
+                    self.count = _count
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
+        )
+    }
+
     @Test("Diagnoses staging local collision with top-level local function")
     func diagnosesStagingLocalCollisionWithTopLevelLocalFunction() throws {
         let declaration = try initializerInStruct(
@@ -728,6 +751,38 @@ struct ThreadSafeInitializerMacroTests {
                 "var_count:Int",
                 #"let_name:String="Seed""#,
                 #"_count={[name="Temp"]inname.count}()"#,
+                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+            ]
+        )
+    }
+
+    @Test("Allows pre-state nested type members named like tracked properties")
+    func allowsPreStateNestedTypeMembersNamedLikeTrackedProperties() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    struct Snapshot {
+                        let name: String
+                        var value: Int { name.count }
+                    }
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                #"let_name:String="Seed""#,
+                "structSnapshot{letname:Stringvarvalue:Int{name.count}}",
+                "_count=count",
                 "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
             ]
         )

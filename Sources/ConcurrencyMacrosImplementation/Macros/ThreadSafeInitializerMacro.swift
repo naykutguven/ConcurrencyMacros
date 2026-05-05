@@ -717,6 +717,10 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
     ) -> String? {
         let syntax = Syntax(node)
 
+        if isNestedDeclarationContext(syntax) {
+            return nil
+        }
+
         if let ifExpression = syntax.as(IfExprSyntax.self) {
             return firstTrackedPreStateAccess(
                 in: ifExpression,
@@ -1280,6 +1284,11 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
     }
 
     private static func topLevelDeclarationLocalNames(in statement: CodeBlockItemSyntax) -> Set<String> {
+        if case .stmt(let statement) = statement.item,
+           let guardStatement = statement.as(GuardStmtSyntax.self) {
+            return localNames(in: guardStatement.conditions)
+        }
+
         guard case .decl(let declaration) = statement.item else {
             return []
         }
@@ -1381,6 +1390,22 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         Set(
             conditions.flatMap { conditionElement in
                 localNames(in: conditionElement, trackedNames: trackedNames)
+            }
+        )
+    }
+
+    private static func localNames(in conditions: ConditionElementListSyntax) -> Set<String> {
+        Set(
+            conditions.flatMap { conditionElement in
+                if let optionalBinding = conditionElement.condition.as(OptionalBindingConditionSyntax.self) {
+                    return localNames(in: optionalBinding.pattern)
+                }
+
+                if let matchingPattern = conditionElement.condition.as(MatchingPatternConditionSyntax.self) {
+                    return localNames(in: matchingPattern.pattern)
+                }
+
+                return []
             }
         )
     }

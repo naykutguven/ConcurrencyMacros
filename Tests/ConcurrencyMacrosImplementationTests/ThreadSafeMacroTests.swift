@@ -234,6 +234,25 @@ struct ThreadSafeMacroTests {
         )
     }
 
+    @Test("Diagnoses global actor attributes on tracked stored properties as attributes")
+    func diagnosesGlobalActorAttributesOnTrackedStoredPropertiesAsAttributes() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                @MainActor var count: Int = 0
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe does not support attributes on stored property 'count' in 1.0.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyAttributesUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
     @Test("Diagnoses unsupported modifiers on tracked stored properties")
     func diagnosesUnsupportedModifiersOnTrackedStoredProperties() throws {
         let cases = [
