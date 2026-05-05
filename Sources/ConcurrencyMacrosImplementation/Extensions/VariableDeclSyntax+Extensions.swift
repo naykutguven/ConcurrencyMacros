@@ -62,7 +62,15 @@ extension VariableDeclSyntax {
             )
         }
 
-        guard attributes.allSatisfy({ $0.isThreadSafePropertyAttribute }) else {
+        if let unsupportedAttribute = attributes.firstUnsupportedThreadSafeStoredPropertyAttribute {
+            if let wrapperName = unsupportedAttribute.likelyPropertyWrapperName {
+                throw DiagnosticsError(
+                    threadSafe: unsupportedAttribute,
+                    id: "propertyWrappersUnsupported",
+                    message: "@ThreadSafe does not support property wrapper '\(wrapperName)' on stored property '\(name.text)' in 1.0."
+                )
+            }
+
             throw DiagnosticsError(
                 threadSafe: self,
                 id: "propertyAttributesUnsupported",
@@ -173,6 +181,37 @@ private extension AttributeListSyntax.Element {
         let name = attribute.attributeName.trimmedDescription
             .replacingOccurrences(of: " ", with: "")
         return name == "ThreadSafeProperty" || name.hasSuffix(".ThreadSafeProperty")
+    }
+}
+
+private extension AttributeListSyntax {
+    var firstUnsupportedThreadSafeStoredPropertyAttribute: AttributeSyntax? {
+        for element in self where !element.isThreadSafePropertyAttribute {
+            if let attribute = element.as(AttributeSyntax.self) {
+                return attribute
+            }
+        }
+
+        return nil
+    }
+}
+
+private extension AttributeSyntax {
+    // Without type information, the best available signal for wrapper-like attributes is a
+    // type-style attribute name such as `Clamped` or `MyModule.Clamped`.
+    var likelyPropertyWrapperName: String? {
+        let normalizedName = attributeName.trimmedDescription.replacingOccurrences(of: " ", with: "")
+        guard let lastComponent = normalizedName.split(separator: ".").last else {
+            return nil
+        }
+
+        guard let firstScalar = lastComponent.unicodeScalars.first,
+              CharacterSet.uppercaseLetters.contains(firstScalar)
+        else {
+            return nil
+        }
+
+        return String(lastComponent)
     }
 }
 

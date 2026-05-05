@@ -475,6 +475,54 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Diagnoses required assignments inside defer blocks")
+    func diagnosesRequiredAssignmentsInsideDeferBlocks() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int) {
+                    defer {
+                        self.count = count
+                    }
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "Initializer must assign tracked property 'count' with a plain top-level assignment before @ThreadSafe state initialization.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "requiredInitializerAssignmentUnsupported")
+        )
+    }
+
+    @Test("Diagnoses required assignments inside do-catch blocks")
+    func diagnosesRequiredAssignmentsInsideDoCatchBlocks() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: Int, flag: Bool) {
+                    do {
+                        if flag {
+                            self.count = count
+                        }
+                    } catch {
+                        self.count = 0
+                    }
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "Initializer must assign tracked property 'count' with a plain top-level assignment before @ThreadSafe state initialization.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "requiredInitializerAssignmentUnsupported")
+        )
+    }
+
     @Test("Diagnoses required property missing a top-level assignment")
     func diagnosesRequiredPropertyMissingTopLevelAssignment() throws {
         let declaration = try initializerInStruct(

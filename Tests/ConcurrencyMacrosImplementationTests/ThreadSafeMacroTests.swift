@@ -196,12 +196,31 @@ struct ThreadSafeMacroTests {
         )
     }
 
-    @Test("Diagnoses attributes on tracked stored properties")
-    func diagnosesAttributesOnTrackedStoredProperties() throws {
+    @Test("Diagnoses property wrappers on tracked stored properties")
+    func diagnosesPropertyWrappersOnTrackedStoredProperties() throws {
         let declaration = try classDeclaration(
             in: """
             class Example {
                 @Clamped var count: Int = 0
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe does not support property wrapper 'Clamped' on stored property 'count' in 1.0.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyWrappersUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Diagnoses non-wrapper attributes on tracked stored properties")
+    func diagnosesNonWrapperAttributesOnTrackedStoredProperties() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                @available(*, deprecated) var count: Int = 0
             }
             """
         )
