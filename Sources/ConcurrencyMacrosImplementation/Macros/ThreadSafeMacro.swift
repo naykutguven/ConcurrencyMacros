@@ -28,21 +28,35 @@ public struct ThreadSafeMacro: MemberMacro {
         conformingTo _: [TypeSyntax],
         in _: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
-        guard let classDecl = declaration.as(ClassDeclSyntax.self) else { return [] }
-        let storedVariables = classDecl.storedVariables
+        guard let classDecl = declaration.as(ClassDeclSyntax.self) else {
+            throw DiagnosticsError(
+                threadSafe: declaration,
+                id: "invalidAttachment",
+                message: "@ThreadSafe can only be attached to class declarations."
+            )
+        }
+        let storedProperties = try classDecl.threadSafeStoredProperties()
 
         var members = [DeclSyntax]()
 
-        let hasInitializer = classDecl.memberBlock.members.contains(where: { $0.decl.as(InitializerDeclSyntax.self) != nil })
-        if !hasInitializer {
+        let hasDesignatedInitializer = classDecl.memberBlock.members.contains { member in
+            guard let initializer = member.decl.as(InitializerDeclSyntax.self) else {
+                return false
+            }
+
+            return !initializer.isConvenience
+        }
+        if !hasDesignatedInitializer {
             // Generate and initialize _state property
-            let variables = try storedVariables.map { name, _, defaultValue in
-                guard let defaultValue else {
+            let variables = try storedProperties.map { property in
+                guard let defaultValue = property.defaultValueDescription else {
                     throw DiagnosticsError(
-                        syntax: classDecl,
-                        message: "Property '\(name)' must have a default value or the class must define an initializer.")
+                        threadSafe: classDecl,
+                        id: "missingDefaultValue",
+                        message: "Property '\(property.nameText)' must have a default value or the class must define a designated initializer."
+                    )
                 }
-                return "\(name): \(defaultValue)"
+                return "\(property.nameText): \(defaultValue)"
             }
             let decl = "private let \(Constant.stateName) = ConcurrencyMacros.Mutex<_State>(_State(\(variables.joined(separator: ", "))))"
             let stateProperty = DeclSyntax("""
@@ -59,8 +73,8 @@ public struct ThreadSafeMacro: MemberMacro {
 
         // Generate _State struct with the stored properties
         var internalStateFields = ""
-        for (name, type, _) in storedVariables {
-            internalStateFields += "    var \(name): \(type)\n"
+        for property in storedProperties {
+            internalStateFields += "    var \(property.nameText): \(property.typeDescription)\n"
         }
 
         let internalStateStruct = DeclSyntax("""
@@ -93,19 +107,18 @@ extension ThreadSafeMacro: MemberAttributeMacro {
         providingAttributesFor member: some DeclSyntaxProtocol,
         in _: some MacroExpansionContext
     ) throws -> [AttributeSyntax] {
+        guard let classDecl = group.as(ClassDeclSyntax.self) else { return [] }
+
         // Add @ThreadSafeProperty to stored var properties
         if let property = member.as(VariableDeclSyntax.self) {
-            // Don't apply if the property is already tracked
-            if
-                property.attributes.contains(where: {
-                    $0.as(AttributeSyntax.self)?.attributeName.as(IdentifierTypeSyntax.self)?.name.text == Constant.trackedMacroName
-                })
-            {
+            switch try property.threadSafeStoredProperty() {
+            case .ignored:
                 return []
-            }
+            case .tracked:
+                guard !property.hasThreadSafePropertyAttribute else {
+                    return []
+                }
 
-            if property.isMutable {
-                // Apply the @ThreadSafeProperty attribute
                 return [
                     AttributeSyntax(
                         attributeName: IdentifierTypeSyntax(
@@ -118,17 +131,16 @@ extension ThreadSafeMacro: MemberAttributeMacro {
 
         // Add @ThreadSafeInitializer to initializers (not convenience ones)
         if let initDecl = member.as(InitializerDeclSyntax.self),
-           !initDecl.modifiers.contains(where: { $0.name.text == "convenience" }) {
-            guard let classDecl = group.as(ClassDeclSyntax.self) else { return [] }
-            let storedVariablesNames = classDecl.storedVariables
+           !initDecl.isConvenience {
+            let storedProperties = try classDecl.threadSafeStoredProperties()
 
             let argumentListExpr: String = {
-                if storedVariablesNames.isEmpty { return "[:]" }
-                let arguments = storedVariablesNames.map { key, type, defaultValue in
-                    if let defaultValue {
-                        "\"\(key)\": ConcurrencyMacros.TypeErased<\(type)>(value: \(defaultValue)),"
+                if storedProperties.isEmpty { return "[:]" }
+                let arguments = storedProperties.map { property in
+                    if let defaultValue = property.defaultValueDescription {
+                        "\"\(property.nameText)\": ConcurrencyMacros.TypeErased<\(property.typeDescription)>(value: \(defaultValue)),"
                     } else {
-                        "\"\(key)\": ConcurrencyMacros.TypeErased<\(type)>(),"
+                        "\"\(property.nameText)\": ConcurrencyMacros.TypeErased<\(property.typeDescription)>(),"
                     }
                 }.joined(separator: "\n")
                 return "[\n\(arguments)\n]"
@@ -155,36 +167,8 @@ extension ThreadSafeMacro: MemberAttributeMacro {
     }
 }
 
-// MARK: - SendableDiagnostic
-
-/// Diagnostic message emitted when thread-safe macro expansion constraints are violated.
-struct SendableDiagnostic: DiagnosticMessage {
-    /// Human-readable diagnostic text.
-    let message: String
-
-    /// Stable diagnostic identifier for tooling and assertions.
-    var diagnosticID: MessageID {
-        MessageID(domain: "ThreadSafeMacro", id: "propertyReplacement")
-    }
-
-    /// Severity used for emitted diagnostics.
-    var severity: DiagnosticSeverity {
-        .error
-    }
-}
-
-// MARK: - DiagnosticsError Extension
-
-/// Convenience constructors for emitting diagnostics from macro helpers.
-extension DiagnosticsError {
-    /// Creates a diagnostics error containing one error-level message anchored to `syntax`.
-    ///
-    /// - Parameters:
-    ///   - syntax: The syntax node associated with the diagnostic.
-    ///   - message: The diagnostic message text.
-    init(syntax: some SyntaxProtocol, message: String) {
-        self.init(diagnostics: [
-            Diagnostic(node: Syntax(syntax), message: SendableDiagnostic(message: message)),
-        ])
+private extension InitializerDeclSyntax {
+    var isConvenience: Bool {
+        modifiers.contains(where: { $0.name.text == "convenience" })
     }
 }

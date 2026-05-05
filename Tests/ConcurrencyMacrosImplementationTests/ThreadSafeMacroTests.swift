@@ -21,8 +21,8 @@ struct ThreadSafeMacroTests {
         )
     }
 
-    @Test("Returns no members when declaration is not a class")
-    func returnsNoMembersForNonClassDeclaration() throws {
+    @Test("Diagnoses non-class member expansion")
+    func diagnosesNonClassMemberExpansion() throws {
         let declaration = try firstDeclaration(
             in: """
             struct Example {
@@ -31,9 +31,13 @@ struct ThreadSafeMacroTests {
             """
         )
 
-        let expanded = try expandMembers(for: declaration)
-
-        #expect(expanded.isEmpty)
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe can only be attached to class declarations.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidAttachment"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
     }
 
     @Test("Expands ThreadSafe end-to-end with property and initializer rewriting")
@@ -73,6 +77,35 @@ struct ThreadSafeMacroTests {
         #expect(output.contains(#"let_name:String="Seed""#))
         #expect(output.contains("_count=count"))
         #expect(output.contains("self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))"))
+    }
+
+    @Test("Expands ThreadSafe end-to-end with explicitly typed complex defaults")
+    func expandsThreadSafeEndToEndWithExplicitlyTypedComplexDefaults() {
+        let sourceFile = Parser.parse(
+            source: """
+            @ThreadSafe
+            class Example {
+                var values: [String: Int] = [:]
+                var formatter: DateFormatter = DateFormatter()
+            }
+            """
+        )
+
+        let context = BasicMacroExpansionContext()
+        let expanded = sourceFile.expand(
+            macros: Self.endToEndMacros,
+            contextGenerator: { _ in context },
+            indentationWidth: .spaces(4)
+        )
+        let output = expanded.nonWhitespaceDescription
+
+        #expect(output.contains("privatelet_state=ConcurrencyMacros.Mutex<_State>(_State(values:[:],formatter:DateFormatter()))"))
+        #expect(output.contains("varvalues:[String:Int]"))
+        #expect(output.contains("varformatter:DateFormatter"))
+        #expect(output.contains("get{_state.value.values}"))
+        #expect(output.contains("set{_=_state.set(\\.values,to:newValue)}"))
+        #expect(output.contains("get{_state.value.formatter}"))
+        #expect(output.contains("set{_=_state.set(\\.formatter,to:newValue)}"))
     }
 
     @Test("Generates initialized internal state for classes without initializers")
@@ -119,10 +152,214 @@ struct ThreadSafeMacroTests {
             let diagnostic = try #require(error.diagnostics.first)
             #expect(
                 diagnostic.message
-                    == "Property 'count' must have a default value or the class must define an initializer."
+                    == "Property 'count' must have a default value or the class must define a designated initializer."
             )
             #expect(diagnostic.diagMessage.severity == .error)
         }
+    }
+
+    @Test("Diagnoses complex inferred defaults without explicit type annotations")
+    func diagnosesComplexInferredDefaultsWithoutExplicitTypeAnnotations() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var formatter = DateFormatter()
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "Property 'formatter' must declare an explicit type when the default value is not a simple literal.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "complexInferredDefault"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Diagnoses multi-binding mutable stored properties")
+    func diagnosesMultiBindingMutableStoredProperties() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var first: Int = 1, second: Int = 2
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe supports one stored property per declaration; split this declaration into separate var declarations.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "multipleBindingsUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Diagnoses property wrappers on tracked stored properties")
+    func diagnosesPropertyWrappersOnTrackedStoredProperties() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                @Clamped var count: Int = 0
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe does not support property wrapper 'Clamped' on stored property 'count' in 1.0.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyWrappersUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Diagnoses non-wrapper attributes on tracked stored properties")
+    func diagnosesNonWrapperAttributesOnTrackedStoredProperties() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                @available(*, deprecated) var count: Int = 0
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe does not support attributes on stored property 'count' in 1.0.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyAttributesUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Diagnoses global actor attributes on tracked stored properties as attributes")
+    func diagnosesGlobalActorAttributesOnTrackedStoredPropertiesAsAttributes() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                @MainActor var count: Int = 0
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe does not support attributes on stored property 'count' in 1.0.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyAttributesUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Diagnoses unsupported modifiers on tracked stored properties")
+    func diagnosesUnsupportedModifiersOnTrackedStoredProperties() throws {
+        let cases = [
+            (modifier: "static", name: "count", declaration: "static var count: Int = 0"),
+            (modifier: "lazy", name: "cache", declaration: "lazy var cache: Int = 0"),
+            (modifier: "weak", name: "delegate", declaration: "weak var delegate: Delegate?"),
+            (modifier: "unowned", name: "owner", declaration: "unowned var owner: Owner"),
+        ]
+
+        for testCase in cases {
+            let declaration = try classDeclaration(
+                in: """
+                class Example {
+                    \(testCase.declaration)
+                }
+                """
+            )
+
+            try assertThreadSafeDiagnostic(
+                expectedMessage: "@ThreadSafe does not support modifier '\(testCase.modifier)' on stored property '\(testCase.name)' in 1.0.",
+                expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyModifiersUnsupported"),
+                operation: {
+                    _ = try expandMembers(for: declaration)
+                }
+            )
+        }
+    }
+
+    @Test("Diagnoses computed properties because they are not stored state")
+    func diagnosesComputedPropertiesBecauseTheyAreNotStoredState() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var computed: Int { 1 }
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe does not support computed property 'computed' in 1.0.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "computedPropertyUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Diagnoses observers on mutable stored properties")
+    func diagnosesObserversOnMutableStoredProperties() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var count: Int = 0 {
+                    didSet {
+                        print(count)
+                    }
+                }
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe does not support property observers on stored property 'count' in 1.0.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyObserversUnsupported"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Diagnoses tracked property names that conflict with synthesized storage")
+    func diagnosesTrackedPropertyNamesThatConflictWithSynthesizedStorage() throws {
+        let cases = ["_state", "_State", "inLock"]
+
+        for propertyName in cases {
+            let declaration = try classDeclaration(
+                in: """
+                class Example {
+                    var \(propertyName): Int = 0
+                }
+                """
+            )
+
+            try assertThreadSafeDiagnostic(
+                expectedMessage: "@ThreadSafe property name '\(propertyName)' conflicts with synthesized storage; rename the property.",
+                expectedID: MessageID(domain: "ThreadSafeMacro", id: "reservedPropertyName"),
+                operation: {
+                    _ = try expandMembers(for: declaration)
+                }
+            )
+        }
+    }
+
+    @Test("Tracks stored properties with access-control modifiers")
+    func tracksStoredPropertiesWithAccessControlModifiers() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                private var count: Int = 0
+            }
+            """
+        )
+
+        let expanded = try expandMembers(for: declaration)
+
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=ConcurrencyMacros.Mutex<_State>(_State(count:0))")
+        #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
     }
 
     @Test("Generates uninitialized internal state when class defines an initializer")
@@ -147,16 +384,120 @@ struct ThreadSafeMacroTests {
         #expect(expanded[2].nonWhitespaceDescription.contains("_state.mutate(mutation)"))
     }
 
-    @Test("SendableDiagnostic exposes stable metadata")
-    func sendableDiagnosticExposesStableMetadata() {
-        let diagnostic = SendableDiagnostic(message: "Example")
+    @Test("Generates initialized internal state when class has only convenience initializers")
+    func generatesInitializedInternalStateWithOnlyConvenienceInitializers() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var count: Int = 0
+
+                convenience init(flag: Bool) {
+                    self.init()
+                }
+            }
+            """
+        )
+
+        let expanded = try expandMembers(for: declaration)
+
+        #expect(expanded.count == 3)
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=ConcurrencyMacros.Mutex<_State>(_State(count:0))")
+        #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
+        #expect(expanded[2].nonWhitespaceDescription.contains("_state.mutate(mutation)"))
+    }
+
+    @Test("Diagnoses required tracked property when class has only convenience initializers")
+    func diagnosesRequiredTrackedPropertyWithOnlyConvenienceInitializers() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var count: Int
+
+                convenience init(flag: Bool) {
+                    self.init()
+                }
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "Property 'count' must have a default value or the class must define a designated initializer.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "missingDefaultValue"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("ThreadSafeDiagnostic exposes stable metadata")
+    func threadSafeDiagnosticExposesStableMetadata() {
+        let diagnostic = ThreadSafeDiagnostic(id: "example", message: "Example")
 
         #expect(diagnostic.message == "Example")
         #expect(diagnostic.severity == .error)
         #expect(
             diagnostic.diagnosticID
-                == MessageID(domain: "ThreadSafeMacro", id: "propertyReplacement")
+                == MessageID(domain: "ThreadSafeMacro", id: "example")
         )
+    }
+
+    @Test("Stored property extractor defaults optional spellings to nil")
+    func storedPropertyExtractorDefaultsOptionalSpellingsToNil() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var shorthand: String?
+                var generic: Optional<Int>
+                var qualified: Swift.Optional<Double>
+                var implicitlyUnwrapped: Bool!
+            }
+            """
+        )
+
+        let properties = try declaration.threadSafeStoredProperties()
+
+        #expect(properties.map(\.nameText) == ["shorthand", "generic", "qualified", "implicitlyUnwrapped"])
+        #expect(properties.map(\.typeDescription) == ["String?", "Optional<Int>", "Swift.Optional<Double>", "Bool!"])
+        #expect(properties.map(\.defaultValueDescription) == ["nil", "nil", "nil", "nil"])
+    }
+
+    @Test("Stored property extractor infers negative numeric literal types")
+    func storedPropertyExtractorInfersNegativeNumericLiteralTypes() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                var integer = -1
+                var double = -1.0
+            }
+            """
+        )
+
+        let properties = try declaration.threadSafeStoredProperties()
+
+        #expect(properties.map(\.nameText) == ["integer", "double"])
+        #expect(properties.map(\.typeDescription) == ["Int", "Double"])
+        #expect(properties.map(\.defaultValueDescription) == ["-1", "-1.0"])
+    }
+
+    @Test("Stored property extractor detects qualified ThreadSafeProperty attributes")
+    func storedPropertyExtractorDetectsQualifiedThreadSafePropertyAttributes() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example {
+                @ConcurrencyMacros.ThreadSafeProperty var count: Int = 0
+            }
+            """
+        )
+
+        let variable = try #require(
+            try declaration.memberDecl(at: 0).as(VariableDeclSyntax.self)
+        )
+        let properties = try declaration.threadSafeStoredProperties()
+
+        #expect(variable.hasThreadSafePropertyAttribute)
+        #expect(properties.map(\.nameText) == ["count"])
+        #expect(properties.first?.typeDescription == "Int")
+        #expect(properties.first?.defaultValueDescription == "0")
     }
 
     @Test("Generates empty internal state for classes without mutable stored properties")
@@ -318,6 +659,22 @@ struct ThreadSafeMacroTests {
         #expect(expanded.isEmpty)
     }
 
+    @Test("Returns no property attributes when attached declaration group is not a class")
+    func returnsNoPropertyAttributesForNonClassGroups() throws {
+        let declaration = try structDeclaration(
+            in: """
+            struct Example {
+                var count: Int = 0
+            }
+            """
+        )
+        let property = try declaration.memberDecl(at: 0)
+
+        let expanded = try expandAttributes(attachedTo: declaration, member: property)
+
+        #expect(expanded.isEmpty)
+    }
+
     @Test("Returns no attributes for unsupported members")
     func returnsNoAttributesForUnsupportedMembers() throws {
         let declaration = try classDeclaration(
@@ -376,6 +733,29 @@ private extension ThreadSafeMacroTests {
             providingAttributesFor: member,
             in: BasicMacroExpansionContext()
         )
+    }
+
+    /// Asserts that a `@ThreadSafe` expansion operation throws a single expected diagnostic.
+    ///
+    /// - Parameters:
+    ///   - expectedMessage: Exact diagnostic text expected from the macro.
+    ///   - expectedID: Stable diagnostic identifier expected from the macro.
+    ///   - operation: Expansion operation that should fail with `DiagnosticsError`.
+    func assertThreadSafeDiagnostic(
+        expectedMessage: String,
+        expectedID: MessageID,
+        operation: () throws -> Void
+    ) throws {
+        do {
+            try operation()
+            Issue.record("Expected diagnostics error to be thrown")
+        } catch let error as DiagnosticsError {
+            #expect(error.diagnostics.count == 1)
+            let diagnostic = try #require(error.diagnostics.first)
+            #expect(diagnostic.message == expectedMessage)
+            #expect(diagnostic.diagMessage.severity == .error)
+            #expect(diagnostic.diagMessage.diagnosticID == expectedID)
+        }
     }
 
     /// Parses and returns the first declaration from source text.
