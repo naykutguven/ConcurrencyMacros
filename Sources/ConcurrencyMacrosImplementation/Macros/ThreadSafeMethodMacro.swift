@@ -140,11 +140,23 @@ private func validate(
                 id: "threadSafeMethodClosureUnsupported",
                 message: "'@ThreadSafeMethod' does not support closures because they can capture locked state; use inLock around the synchronous statements instead."
             )
-        case .nestedFunction(let nestedFunction):
+        case .unsupportedCall(let call):
             throw DiagnosticsError(
-                threadSafe: nestedFunction,
-                id: "threadSafeMethodClosureUnsupported",
-                message: "'@ThreadSafeMethod' does not support closures because they can capture locked state; use inLock around the synchronous statements instead."
+                threadSafe: call,
+                id: "threadSafeMethodCallUnsupported",
+                message: "'@ThreadSafeMethod' does not support function or self-method calls while holding the storage lock; use inLock explicitly around the statements that need the lock."
+            )
+        case .keyPath(let keyPath):
+            throw DiagnosticsError(
+                threadSafe: keyPath,
+                id: "threadSafeMethodKeyPathUnsupported",
+                message: "'@ThreadSafeMethod' does not support key path expressions because tracked properties are rewritten under lock; use inLock explicitly."
+            )
+        case .nestedDeclaration(let declaration):
+            throw DiagnosticsError(
+                threadSafe: declaration,
+                id: "threadSafeMethodNestedDeclarationUnsupported",
+                message: "'@ThreadSafeMethod' does not support nested declarations because they can capture or shadow locked state; use inLock around the synchronous statements instead."
             )
         case .shadowedLocal(let shadowedLocal):
             throw shadowingDiagnostic(syntax: attribute, name: shadowedLocal)
@@ -177,7 +189,9 @@ private extension FunctionDeclSyntax {
 
 private enum ThreadSafeMethodValidationFailure {
     case closure(ClosureExprSyntax)
-    case nestedFunction(FunctionDeclSyntax)
+    case unsupportedCall(FunctionCallExprSyntax)
+    case keyPath(KeyPathExprSyntax)
+    case nestedDeclaration(Syntax)
     case shadowedLocal(String)
 }
 
@@ -189,8 +203,17 @@ private func firstValidationFailure(
         return .closure(closure)
     }
 
-    if let function = syntax.as(FunctionDeclSyntax.self) {
-        return .nestedFunction(function)
+    if let keyPath = syntax.as(KeyPathExprSyntax.self) {
+        return .keyPath(keyPath)
+    }
+
+    if syntax.isNestedThreadSafeMethodDeclaration {
+        return .nestedDeclaration(syntax)
+    }
+
+    if let call = syntax.as(FunctionCallExprSyntax.self),
+       call.calledExpression.isUnsupportedThreadSafeMethodCall(trackedPropertyNames: trackedPropertyNames) {
+        return .unsupportedCall(call)
     }
 
     if let variable = syntax.as(VariableDeclSyntax.self) {
@@ -256,6 +279,26 @@ private func threadSafeMethodReplacements(
     trackedPropertyNames: Set<String>,
     stateParameterName: String
 ) -> [ThreadSafeMethodReplacement] {
+    if syntax.as(KeyPathExprSyntax.self) != nil ||
+        syntax.as(PatternSyntax.self) != nil ||
+        syntax.isNestedThreadSafeMethodDeclaration {
+        return []
+    }
+
+    if let variable = syntax.as(VariableDeclSyntax.self) {
+        return variable.bindings.flatMap { binding in
+            guard let initializer = binding.initializer else {
+                return [ThreadSafeMethodReplacement]()
+            }
+
+            return threadSafeMethodReplacements(
+                in: Syntax(initializer.value),
+                trackedPropertyNames: trackedPropertyNames,
+                stateParameterName: stateParameterName
+            )
+        }
+    }
+
     if let memberAccess = syntax.as(MemberAccessExprSyntax.self),
        let base = memberAccess.base,
        base.trimmedDescription == "self" {
@@ -290,6 +333,64 @@ private func threadSafeMethodReplacements(
             trackedPropertyNames: trackedPropertyNames,
             stateParameterName: stateParameterName
         )
+    }
+}
+
+private extension ExprSyntax {
+    func isUnsupportedThreadSafeMethodCall(trackedPropertyNames: Set<String>) -> Bool {
+        if isThreadSafeMethodTrackedPropertyMemberCall(trackedPropertyNames: trackedPropertyNames) {
+            return false
+        }
+
+        if self.as(DeclReferenceExprSyntax.self) != nil {
+            return true
+        }
+
+        return isRootedOnSelf
+    }
+
+    func isThreadSafeMethodTrackedPropertyMemberCall(trackedPropertyNames: Set<String>) -> Bool {
+        guard let memberAccess = self.as(MemberAccessExprSyntax.self),
+              let base = memberAccess.base
+        else {
+            return false
+        }
+
+        if let reference = base.as(DeclReferenceExprSyntax.self) {
+            return trackedPropertyNames.contains(reference.baseName.text)
+        }
+
+        if let baseMemberAccess = base.as(MemberAccessExprSyntax.self),
+           let baseExpression = baseMemberAccess.base,
+           baseExpression.trimmedDescription == "self" {
+            return trackedPropertyNames.contains(baseMemberAccess.declName.baseName.text)
+        }
+
+        return false
+    }
+
+    var isRootedOnSelf: Bool {
+        if trimmedDescription == "self" {
+            return true
+        }
+
+        if let memberAccess = self.as(MemberAccessExprSyntax.self),
+           let base = memberAccess.base {
+            return base.isRootedOnSelf
+        }
+
+        return false
+    }
+}
+
+private extension Syntax {
+    var isNestedThreadSafeMethodDeclaration: Bool {
+        self.is(FunctionDeclSyntax.self) ||
+            self.is(StructDeclSyntax.self) ||
+            self.is(ClassDeclSyntax.self) ||
+            self.is(ActorDeclSyntax.self) ||
+            self.is(EnumDeclSyntax.self) ||
+            self.is(ProtocolDeclSyntax.self)
     }
 }
 

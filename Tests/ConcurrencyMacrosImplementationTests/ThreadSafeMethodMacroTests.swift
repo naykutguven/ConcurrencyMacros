@@ -71,6 +71,134 @@ struct ThreadSafeMethodMacroTests {
         #expect(output.contains("return_threadSafeState.count"))
     }
 
+    @Test("Allows member calls rooted on tracked property")
+    func allowsMemberCallsRootedOnTrackedProperty() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Store: Sendable {
+                var items: [Int] = []
+
+                @ThreadSafeMethod
+                func append(_ value: Int) {
+                    items.append(value)
+                    self.items.append(value + 1)
+                }
+            }
+            """
+        )
+
+        let body = try expandBody(for: function)
+
+        #expect(body.count == 1)
+        let output = body[0].nonWhitespaceDescription
+        #expect(output.contains("_threadSafeState.items.append(value)"))
+        #expect(output.contains("_threadSafeState.items.append(value+1)"))
+    }
+
+    @Test("Rejects unqualified helper calls")
+    func rejectsUnqualifiedHelperCalls() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func refresh() {
+                    helper()
+                }
+
+                func helper() {
+                    count += 1
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: "'@ThreadSafeMethod' does not support function or self-method calls while holding the storage lock; use inLock explicitly around the statements that need the lock.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
+        )
+    }
+
+    @Test("Rejects self helper calls")
+    func rejectsSelfHelperCalls() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func refresh() {
+                    self.helper()
+                }
+
+                func helper() {
+                    count += 1
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: "'@ThreadSafeMethod' does not support function or self-method calls while holding the storage lock; use inLock explicitly around the statements that need the lock.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
+        )
+    }
+
+    @Test("Rejects key path expressions")
+    func rejectsKeyPathExpressions() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func keyPath() -> KeyPath<Counter, Int> {
+                    \\Counter.count
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: "'@ThreadSafeMethod' does not support key path expressions because tracked properties are rewritten under lock; use inLock explicitly.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodKeyPathUnsupported")
+        )
+    }
+
+    @Test("Rejects nested local type declarations")
+    func rejectsNestedLocalTypeDeclarations() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func refresh() {
+                    struct Snapshot {
+                        let count: Int
+                    }
+                    count += 1
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: "'@ThreadSafeMethod' does not support nested declarations because they can capture or shadow locked state; use inLock around the synchronous statements instead.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodNestedDeclarationUnsupported")
+        )
+    }
+
     @Test("Rejects async methods")
     func rejectsAsyncMethods() throws {
         let function = try firstAttributedFunction(
