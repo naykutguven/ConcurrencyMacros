@@ -13,7 +13,7 @@ struct ThreadSafeStoredProperty {
     /// Source token for the stored property's identifier.
     let name: TokenSyntax
 
-    /// Type used for the synthesized `_State` field and staging local.
+    /// Type used for the synthesized state member and initializer staging local.
     let type: TypeSyntax
 
     /// Initial value used when the source property has a default or optional fallback.

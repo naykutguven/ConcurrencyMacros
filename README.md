@@ -86,16 +86,15 @@ final class SessionStore: Sendable {
     var sessionsByID: [String: Session] = [:]
     var activeUserID: String?
 
-    func upsert(_ session: Session) {
+    func activate(_ session: Session) {
         inLock { state in
             state.sessionsByID[session.id] = session
+            state.activeUserID = session.userID
         }
     }
 
     func session(id: String) -> Session? {
-        inLock { state in
-            state.sessionsByID[id]
-        }
+        sessionsByID[id]
     }
 }
 ```
@@ -278,6 +277,8 @@ The macro handles bounded fan-out, cancellation on failure, and stable output or
 | `@ThreadSafe` | Attached (`member`, `memberAttribute`) | Synthesizes lock-backed state and rewrites mutable stored properties | Class declarations |
 | `@ThreadSafeInitializer` | Attached (`body`) | Helper rewrite for initializer assignment staging | Initializers (helper/support) |
 | `@ThreadSafeProperty` | Attached (`accessor`) | Helper rewrite for lock-backed property accessors | Mutable stored properties (helper/support) |
+| `@ThreadSafeIgnored` | Attached (`peer`) | Marks intentionally unmanaged mutable state for unchecked owners | Mutable stored properties (helper/support) |
+| `@ThreadSafeMethod` | Attached (`body`) | Wraps conservative synchronous method bodies in the generated state lock | Instance methods in nominal `@ThreadSafe` classes |
 | `@SingleFlightActor` | Attached (`body`, `peer`) | Deduplicates in-flight actor method work by key | Actor instance methods |
 | `@SingleFlightClass` | Attached (`body`, `peer`) | Deduplicates in-flight class method work by key | `final` class instance methods |
 | `@StreamBridge` | Attached (`body`, `peer`) | Generates `AsyncStream` / `AsyncThrowingStream` wrappers from callback registration methods | Actor/class instance methods |
@@ -300,13 +301,36 @@ Manual lock storage, private state containers, and repeated lock accessors for m
 
 Use it for synchronous shared mutable state in `final` classes where callers need normal property or method APIs backed by consistent locking.
 
+### Example
+
+```swift
+import ConcurrencyMacros
+
+@ThreadSafe
+final class SessionStore: Sendable {
+    var sessionsByID: [String: Session] = [:]
+    var activeUserID: String?
+
+    func activate(_ session: Session) {
+        inLock { state in
+            state.sessionsByID[session.id] = session
+            state.activeUserID = session.userID
+        }
+    }
+}
+```
+
 ### Safety notes
 
 - Intended for class declarations.
+- The class must explicitly conform to `Sendable` or `@unchecked Sendable`.
+- Checked `Sendable` classes must be `final`.
 - When a class has no initializer, each mutable stored property must have a default value.
 - Rewriting applies to mutable stored properties and designated initializers; convenience initializers are not rewritten.
-- Use generated `inLock` for multi-property or read-modify-write operations that must be atomic.
-- The generated state container is lock-backed and `Sendable`.
+- Single-property compound mutations such as `count += 1` and `items.append(value)` run under the generated storage lock.
+- Use generated `inLock` for multi-property invariants.
+- `@ThreadSafeIgnored` marks intentionally unmanaged mutable state and requires the owning class to conform as `@unchecked Sendable`.
+- `@ThreadSafeMethod` can lock simple synchronous methods, but only member calls rooted on tracked stored properties are allowed inside the wrapped body. Use `inLock` for more complex method bodies.
 
 ## `@SingleFlightActor`
 
@@ -505,6 +529,8 @@ These macros are intentionally documented as support/helper APIs and are typical
 
 - `@ThreadSafeInitializer`: internal initializer-body rewrite helper used by `@ThreadSafe`.
 - `@ThreadSafeProperty`: internal accessor rewrite helper used by `@ThreadSafe`.
+- `@ThreadSafeIgnored`: marks intentionally unmanaged state for `@unchecked Sendable` `@ThreadSafe` classes.
+- `@ThreadSafeMethod`: wraps conservative synchronous `@ThreadSafe` method bodies in the generated lock.
 - `@StreamBridgeDefaults`: declares per-type defaults for `@StreamBridge` (`cancel`, `buffering`, `safety`).
 - `@StreamToken`: synthesizes `StreamBridgeTokenCancellable` conformance by mapping a token cancel method.
 

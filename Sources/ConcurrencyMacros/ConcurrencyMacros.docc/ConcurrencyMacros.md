@@ -8,7 +8,7 @@ Production-oriented Swift Concurrency macros for thread-safe state, single-fligh
 
 Macro families:
 
-- Thread safety: ``ThreadSafe()``, plus helper support from ``ThreadSafeInitializer(_:)`` and ``ThreadSafeProperty()``.
+- Thread safety: ``ThreadSafe()``, plus helper support from ``ThreadSafeInitializer(storage:state:properties:)``, ``ThreadSafeProperty()``, ``ThreadSafeIgnored()``, and ``ThreadSafeMethod()``.
 - Single flight: ``SingleFlightActor(key:using:policy:)`` and ``SingleFlightClass(key:using:policy:)``.
 - Stream bridging: ``StreamBridge(as:event:failure:completion:cancel:buffering:safety:)`` with optional defaults and token helpers.
 - Execution control: ``withTimeout(_:tolerance:operation:)``,
@@ -60,12 +60,15 @@ Use when you need synchronous mutable class APIs with consistent locking during 
 import ConcurrencyMacros
 
 @ThreadSafe
-final class SessionStore {
+final class SessionStore: Sendable {
     var sessionsByID: [String: Session] = [:]
     var activeUserID: String?
 
-    func upsert(_ session: Session) {
-        sessionsByID[session.id] = session
+    func activate(_ session: Session) {
+        inLock { state in
+            state.sessionsByID[session.id] = session
+            state.activeUserID = session.userID
+        }
     }
 }
 ```
@@ -73,9 +76,14 @@ final class SessionStore {
 ### Safety Notes
 
 - Intended for class declarations.
+- The class must explicitly conform to `Sendable` or `@unchecked Sendable`.
+- Checked `Sendable` classes must be `final`.
 - When the class has no initializer, mutable stored properties must have defaults.
 - Rewrites apply to mutable stored properties and designated initializers; convenience initializers are not rewritten.
-- Generated state is lock-backed and represented through synthesized members (`_state`, `_State`, `inLock`).
+- Single-property compound mutations such as `count += 1` and `items.append(value)` run under the generated storage lock.
+- Use generated `inLock` for multi-property invariants.
+- ``ThreadSafeIgnored()`` marks intentionally unmanaged mutable state and requires the owning class to conform as `@unchecked Sendable`.
+- ``ThreadSafeMethod()`` can lock simple synchronous methods, but only member calls rooted on tracked stored properties are allowed inside the wrapped body. Use `inLock` for more complex method bodies.
 
 ## SingleFlightActor(key:using:policy:)
 
@@ -375,8 +383,10 @@ try await #concurrentForEach(files, limit: .fixed(3)) { file in
 
 The following macros are helper/support APIs and are documented here without inline examples:
 
-- ``ThreadSafeInitializer(_:)``: initializer-body rewrite helper used by ``ThreadSafe()``.
+- ``ThreadSafeInitializer(storage:state:properties:)``: initializer-body rewrite helper used by ``ThreadSafe()``.
 - ``ThreadSafeProperty()``: accessor rewrite helper used by ``ThreadSafe()``.
+- ``ThreadSafeIgnored()``: marks intentionally unmanaged state for unchecked ``ThreadSafe()`` classes.
+- ``ThreadSafeMethod()``: wraps conservative synchronous ``ThreadSafe()`` method bodies in the generated lock.
 - ``StreamBridgeDefaults(cancel:buffering:safety:)``: default stream-bridge options for enclosing nominal types.
 - ``StreamToken(cancelMethod:)``: synthesizes ``StreamBridgeTokenCancellable`` conformance for token types.
 
@@ -385,8 +395,10 @@ The following macros are helper/support APIs and are documented here without inl
 ### Thread Safety
 
 - ``ThreadSafe()``
-- ``ThreadSafeInitializer(_:)``
+- ``ThreadSafeInitializer(storage:state:properties:)``
 - ``ThreadSafeProperty()``
+- ``ThreadSafeIgnored()``
+- ``ThreadSafeMethod()``
 
 ### Single Flight
 

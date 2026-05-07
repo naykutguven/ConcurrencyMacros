@@ -58,6 +58,12 @@ struct ConcurrencyMacrosTests {
         }
     }
 
+    @ThreadSafe
+    private final class AtomicPropertyStore: Sendable {
+        var count: Int = 0
+        var items: [Int] = []
+    }
+
     @Test("ThreadSafe compiles with a single import")
     func threadSafeCompilesWithSingleImport() {
         let counter = Counter(count: 1)
@@ -96,6 +102,39 @@ struct ConcurrencyMacrosTests {
         }
 
         #expect(counter.count == iterations)
+    }
+
+    @Test("ThreadSafe compound integer mutation is atomic")
+    func threadSafeCompoundIntegerMutationIsAtomic() async {
+        let store = AtomicPropertyStore()
+        let iterations = 1_000
+
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<iterations {
+                group.addTask {
+                    store.count += 1
+                }
+            }
+        }
+
+        #expect(store.count == iterations)
+    }
+
+    @Test("ThreadSafe array append is atomic for one property")
+    func threadSafeArrayAppendIsAtomicForOneProperty() async {
+        let store = AtomicPropertyStore()
+        let iterations = 1_000
+
+        await withTaskGroup(of: Void.self) { group in
+            for value in 0..<iterations {
+                group.addTask {
+                    store.items.append(value)
+                }
+            }
+        }
+
+        #expect(store.items.count == iterations)
+        #expect(store.items.sorted() == Array(0..<iterations))
     }
 
     @Test("withTimeout compiles with a single import and returns result")
