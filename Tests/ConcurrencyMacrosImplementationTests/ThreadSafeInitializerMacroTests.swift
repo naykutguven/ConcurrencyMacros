@@ -45,7 +45,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["value": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["value": Storage<Int>()])"#,
             for: declaration
         )
 
@@ -66,7 +66,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer("value")"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: "value")"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
@@ -86,7 +86,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
@@ -107,7 +107,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
@@ -130,7 +130,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
@@ -151,7 +151,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
@@ -172,7 +172,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "_count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "_count": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
@@ -193,7 +193,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer staging local '_count' conflicts with an initializer parameter, local, or tracked property; rename the property, parameter, or local.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "stagingNameCollision")
@@ -215,7 +215,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration
         )
 
@@ -223,7 +223,7 @@ struct ThreadSafeInitializerMacroTests {
             expanded.map(\.nonWhitespaceDescription) == [
                 "var_count:Int",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count))",
                 "letlengths=values.map{_countin_count.count}",
                 "print(lengths)",
             ]
@@ -245,7 +245,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration
         )
 
@@ -253,7 +253,7 @@ struct ThreadSafeInitializerMacroTests {
             expanded.map(\.nonWhitespaceDescription) == [
                 "var_count:Int",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count))",
                 "letvalue={[_count=0]in_count}()",
                 "print(value)",
             ]
@@ -278,7 +278,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration
         )
 
@@ -286,7 +286,7 @@ struct ThreadSafeInitializerMacroTests {
             expanded.map(\.nonWhitespaceDescription) == [
                 "var_count:Int",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count))",
                 "structSnapshot{let_count:Intvarvalue:Int{_count}}",
                 "print(Snapshot(_count:1).value)",
             ]
@@ -309,7 +309,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["first": Storage<String>(), "second": Storage<Int>(), "optionalThird": Storage<String?>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["first": Storage<String>(), "second": Storage<Int>(), "optionalThird": Storage<String?>()])"#,
             for: declaration
         )
 
@@ -321,8 +321,34 @@ struct ThreadSafeInitializerMacroTests {
                 "_first=first",
                 "_optionalThird=optionalThird",
                 "_second=second+1",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(first:_first,second:_second,optionalThird:_optionalThird))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(first:_first,second:_second,optionalThird:_optionalThird))",
                 "print(second)",
+            ]
+        )
+    }
+
+    @Test("Initializes unchecked storage from staged assignments")
+    func initializesUncheckedStorageFromStagedAssignments() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(formatter: DateFormatter) {
+                    self.formatter = formatter
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.UncheckedThreadSafeStorage", state: "_ThreadSafeState", properties: ["formatter": Storage<DateFormatter>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_formatter:DateFormatter",
+                "_formatter=formatter",
+                "self._threadSafeStorage=ConcurrencyMacros.UncheckedThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(formatter:_formatter))",
             ]
         )
     }
@@ -342,7 +368,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["first": Storage<String>(), "second": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["first": Storage<String>(), "second": Storage<Int>()])"#,
             for: declaration
         )
 
@@ -352,7 +378,7 @@ struct ThreadSafeInitializerMacroTests {
                 "var_second:Int",
                 "_first=first",
                 "_second=second+1",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(first:_first,second:_second))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(first:_first,second:_second))",
                 "print(second)",
             ]
         )
@@ -372,7 +398,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration
         )
 
@@ -381,7 +407,7 @@ struct ThreadSafeInitializerMacroTests {
                 "var_count:Int",
                 "count==other",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count))",
             ]
         )
     }
@@ -401,7 +427,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration
         )
 
@@ -411,7 +437,7 @@ struct ThreadSafeInitializerMacroTests {
                 "varcount=input",
                 "count=count+1",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count))",
             ]
         )
     }
@@ -430,7 +456,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration
         )
 
@@ -439,7 +465,7 @@ struct ThreadSafeInitializerMacroTests {
                 "var_count:Int",
                 "count=1",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count))",
             ]
         )
     }
@@ -459,7 +485,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration
         )
 
@@ -469,7 +495,7 @@ struct ThreadSafeInitializerMacroTests {
                 "var(count,other)=(input,0)",
                 "count=count+1",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count))",
             ]
         )
     }
@@ -491,7 +517,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "Initializer must assign tracked property 'count' with a plain top-level assignment before @ThreadSafe state initialization.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "requiredInitializerAssignmentUnsupported")
@@ -513,7 +539,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "Initializer must assign tracked property 'count' with a plain top-level assignment before @ThreadSafe state initialization.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "requiredInitializerAssignmentUnsupported")
@@ -539,7 +565,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "Initializer must assign tracked property 'count' with a plain top-level assignment before @ThreadSafe state initialization.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "requiredInitializerAssignmentUnsupported")
@@ -559,7 +585,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["id": Storage<Int>(), "name": Storage<String>(value: "Anonymous")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["id": Storage<Int>(), "name": Storage<String>(value: "Anonymous")])"#,
             for: declaration,
             expectedMessage: "Initializer must assign tracked property 'id' with a plain top-level assignment before @ThreadSafe state initialization.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "requiredInitializerAssignmentUnsupported")
@@ -582,7 +608,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -603,7 +629,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -623,7 +649,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -643,7 +669,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration
         )
 
@@ -651,7 +677,7 @@ struct ThreadSafeInitializerMacroTests {
             expanded.map(\.nonWhitespaceDescription) == [
                 "var_count:Int",
                 "_count=name.count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count))",
             ]
         )
     }
@@ -669,7 +695,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>()])"#,
             for: declaration
         )
 
@@ -677,7 +703,7 @@ struct ThreadSafeInitializerMacroTests {
             expanded.map(\.nonWhitespaceDescription) == [
                 "var_count:Int",
                 "_count=other.count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count))",
             ]
         )
     }
@@ -695,7 +721,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<ExampleName>(value: ExampleName())])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<ExampleName>(value: ExampleName())])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -715,7 +741,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -724,7 +750,7 @@ struct ThreadSafeInitializerMacroTests {
                 "var_count:Int",
                 #"let_name:String="Seed""#,
                 "_count=values.map{nameinname.count}.reduce(0,+)",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -742,7 +768,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -751,7 +777,7 @@ struct ThreadSafeInitializerMacroTests {
                 "var_count:Int",
                 #"let_name:String="Seed""#,
                 #"_count={[name="Temp"]inname.count}()"#,
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -773,7 +799,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -783,7 +809,7 @@ struct ThreadSafeInitializerMacroTests {
                 #"let_name:String="Seed""#,
                 "structSnapshot{letname:Stringvarvalue:Int{name.count}}",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -804,7 +830,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -814,7 +840,7 @@ struct ThreadSafeInitializerMacroTests {
                 #"let_name:String="Seed""#,
                 "fornameinnames{print(name)}",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -835,7 +861,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -845,7 +871,7 @@ struct ThreadSafeInitializerMacroTests {
                 #"let_name:String="Seed""#,
                 "funcname(){name()}",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -866,7 +892,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -876,7 +902,7 @@ struct ThreadSafeInitializerMacroTests {
                 #"let_name:String="Seed""#,
                 "forcaselet.some(name)invalues{print(name)}",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -894,7 +920,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -915,7 +941,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -936,7 +962,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "items": Storage<[String]>(value: [])])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "items": Storage<[String]>(value: [])])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'items' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -957,7 +983,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "items": Storage<[String]>(value: [])])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "items": Storage<[String]>(value: [])])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'items' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -981,7 +1007,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -991,7 +1017,7 @@ struct ThreadSafeInitializerMacroTests {
                 #"let_name:String="Seed""#,
                 "ifflag{varname=\"Temp\"name=\"Override\"}",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -1012,7 +1038,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -1022,7 +1048,7 @@ struct ThreadSafeInitializerMacroTests {
                 #"let_name:String="Seed""#,
                 "ifvarname=optionalName{name=\"Override\"}",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -1043,7 +1069,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String?>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String?>()])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -1067,7 +1093,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String?>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String?>()])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -1091,7 +1117,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String?>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String?>()])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -1114,7 +1140,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String?>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String?>()])"#,
             for: declaration
         )
 
@@ -1124,7 +1150,7 @@ struct ThreadSafeInitializerMacroTests {
                 "let_name:String?=nil",
                 "ifletname{print(name)}",
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -1147,7 +1173,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -1157,7 +1183,7 @@ struct ThreadSafeInitializerMacroTests {
                 #"let_name:String="Seed""#,
                 #"ifvarname=optionalName,({name="Override"returntrue})(){}"#,
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -1180,7 +1206,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -1190,7 +1216,7 @@ struct ThreadSafeInitializerMacroTests {
                 #"let_name:String="Seed""#,
                 #"ifcasevarname?=optionalName,({name="Override"returntrue})(){}"#,
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -1213,7 +1239,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -1223,7 +1249,7 @@ struct ThreadSafeInitializerMacroTests {
                 #"let_name:String="Seed""#,
                 #"ifcaselet.some(name)=optionalName,({name="Override"returntrue})(){}"#,
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -1247,7 +1273,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -1257,7 +1283,7 @@ struct ThreadSafeInitializerMacroTests {
                 #"let_name:String="Seed""#,
                 #"guardvarname=optionalName,({name="Override"returntrue})()else{return}"#,
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -1280,7 +1306,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration
         )
 
@@ -1290,7 +1316,7 @@ struct ThreadSafeInitializerMacroTests {
                 #"let_name:String="Seed""#,
                 #"whilevarname=optionalName,({name="Override"returnfalse})(){}"#,
                 "_count=count",
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))",
             ]
         )
     }
@@ -1313,7 +1339,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -1338,7 +1364,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name": Storage<String>(value: "Seed")])"#,
             for: declaration,
             expectedMessage: "Initializer access to tracked property 'name' before @ThreadSafe state initialization is only supported as the left-hand side of a plain top-level assignment.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "unsupportedInitializerAssignment")
@@ -1358,14 +1384,14 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: #"@ThreadSafeInitializer(["name": Storage<String>(value: "Anonymous")])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["name": Storage<String>(value: "Anonymous")])"#,
             for: declaration
         )
 
         #expect(
             expanded.map(\.nonWhitespaceDescription) == [
                 #"let_name:String="Anonymous""#,
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State(name:_name))",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(name:_name))",
                 "print(id)",
             ]
         )
@@ -1384,13 +1410,13 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         let expanded = try expandBody(
-            attributeSource: "@ThreadSafeInitializer([:])",
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: [:])"#,
             for: declaration
         )
 
         #expect(
             expanded.map(\.nonWhitespaceDescription) == [
-                "self._state=ConcurrencyMacros.Mutex<_State>(_State())",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState())",
                 "print(value)",
             ]
         )
@@ -1409,7 +1435,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": makeStorage(), invalidKey: Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": makeStorage(), invalidKey: Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
@@ -1429,7 +1455,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int, String>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int, String>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
@@ -1449,7 +1475,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer([invalidKey: Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: [invalidKey: Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
@@ -1469,7 +1495,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count\(suffix)": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count\(suffix)": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
@@ -1489,7 +1515,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
@@ -1509,7 +1535,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["not valid": Storage<Int>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["not valid": Storage<Int>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
@@ -1530,7 +1556,7 @@ struct ThreadSafeInitializerMacroTests {
         )
 
         try assertInitializerDiagnostic(
-            attributeSource: #"@ThreadSafeInitializer(["count": Storage<Int>(), "name\(suffix)": Storage<String>()])"#,
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": Storage<Int>(), "name\(suffix)": Storage<String>()])"#,
             for: declaration,
             expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")

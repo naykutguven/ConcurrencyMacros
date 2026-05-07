@@ -11,7 +11,7 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
-/// Rewrites initializer bodies to stage assignments and initialize `_state` once values are ready.
+/// Rewrites initializer bodies to stage assignments and initialize thread-safe storage once values are ready.
 public struct ThreadSafeInitializerMacro: BodyMacro {
     /// Rewrites the initializer to initialize the internal state with the stored properties.
     public static func expansion(
@@ -19,26 +19,16 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         providingBodyFor declaration: some DeclSyntaxProtocol & WithOptionalCodeBlockSyntax,
         in _: some MacroExpansionContext
     ) throws -> [CodeBlockItemSyntax] {
-        guard
-            let decl = declaration.body,
-            let argument = syntax.arguments?.as(LabeledExprListSyntax.self)?.first
-        else {
+        guard let decl = declaration.body else {
             return []
         }
 
-        // Parse arguments
-        guard let dictExpr = argument.expression.as(DictionaryExprSyntax.self)
-        else {
-            throw DiagnosticsError(
-                threadSafe: argument.expression,
-                id: "invalidInitializerPayload",
-                message: "@ThreadSafeInitializer entries must use string keys and generic storage values."
-            )
+        guard let arguments = syntax.arguments?.as(LabeledExprListSyntax.self) else {
+            return []
         }
 
-        let elements = dictExpr.content.as(DictionaryElementListSyntax.self) ?? DictionaryElementListSyntax()
-
-        let trackedProperties = try elements.map(parseTrackedProperty)
+        let payload = try parsePayload(from: arguments)
+        let trackedProperties = try payload.propertyElements.map(parseTrackedProperty)
         if let collidingStagingName = stagingNameCollision(
             in: declaration,
             statements: decl.statements,
@@ -145,9 +135,9 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             return [CodeBlockItemSyntax(statement)]
         }
 
-        // Set _state once the required properties have been set
+        // Initialize storage once the required properties have been set.
         let addedStatement = CodeBlockItemSyntax(
-            stringLiteral: "self._state = ConcurrencyMacros.Mutex<_State>(_State(\(trackedProperties.map { "\($0.name): _\($0.name)" }.joined(separator: ", "))))")
+            stringLiteral: "self._threadSafeStorage = \(payload.storageType)<\(payload.stateType)>(\(payload.stateType)(\(trackedProperties.map { "\($0.name): _\($0.name)" }.joined(separator: ", "))))")
         statements.insert(addedStatement, at: lastRequiredAssignmentOffset + 1)
 
         // Add variables to hold the properties while they are created
@@ -163,6 +153,40 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         return statements.compactMap(\.self)
+    }
+
+    private static func parsePayload(from arguments: LabeledExprListSyntax) throws -> InitializerPayload {
+        guard
+            let storageArgument = arguments.first(where: { $0.label?.text == "storage" }),
+            let stateArgument = arguments.first(where: { $0.label?.text == "state" }),
+            let propertiesArgument = arguments.first(where: { $0.label?.text == "properties" }),
+            let storageType = stringLiteralValue(from: storageArgument.expression),
+            let stateType = stringLiteralValue(from: stateArgument.expression),
+            let propertiesExpression = propertiesArgument.expression.as(DictionaryExprSyntax.self)
+        else {
+            let diagnosticNode = arguments.first?.expression ?? ExprSyntax(stringLiteral: "")
+            throw DiagnosticsError(
+                threadSafe: diagnosticNode,
+                id: "invalidInitializerPayload",
+                message: "@ThreadSafeInitializer entries must use string keys and generic storage values."
+            )
+        }
+
+        let propertyElements = propertiesExpression.content.as(DictionaryElementListSyntax.self) ?? DictionaryElementListSyntax()
+        return InitializerPayload(storageType: storageType, stateType: stateType, propertyElements: propertyElements)
+    }
+
+    private static func stringLiteralValue(from expression: ExprSyntax) -> String? {
+        guard
+            let literal = expression.as(StringLiteralExprSyntax.self),
+            literal.segments.count == 1,
+            let segment = literal.segments.first?.as(StringSegmentSyntax.self),
+            !segment.content.text.isEmpty
+        else {
+            return nil
+        }
+
+        return segment.content.text
     }
 
     private static func trackedAssignment(
@@ -1493,6 +1517,12 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             }
         }
     }
+}
+
+private struct InitializerPayload {
+    let storageType: String
+    let stateType: String
+    let propertyElements: DictionaryElementListSyntax
 }
 
 private struct TrackedProperty {

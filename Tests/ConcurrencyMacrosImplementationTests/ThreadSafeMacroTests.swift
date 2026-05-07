@@ -93,6 +93,24 @@ struct ThreadSafeMacroTests {
         #expect(!expanded.isEmpty)
     }
 
+    @Test("Generates unchecked storage and non-Sendable state in unchecked mode")
+    func generatesUncheckedStorageAndNonSendableStateInUncheckedMode() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example: @unchecked Sendable {
+                var formatter: DateFormatter = DateFormatter()
+            }
+            """
+        )
+
+        let expanded = try expandMembers(for: declaration)
+
+        #expect(expanded.count == 3)
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_threadSafeStorage=ConcurrencyMacros.UncheckedThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(formatter:DateFormatter()))")
+        #expect(expanded[1].nonWhitespaceDescription == "privatestruct_ThreadSafeState{varformatter:DateFormatter}")
+        #expect(expanded[2].nonWhitespaceDescription == "@discardableResultprivatefuncinLock<Result>(_body:(inout_ThreadSafeState)throws->Result)rethrows->Result{try_threadSafeStorage.withLock(body)}")
+    }
+
     @Test("Allows qualified Swift Sendable in checked mode")
     func allowsQualifiedSwiftSendableInCheckedMode() throws {
         let declaration = try classDeclaration(
@@ -234,19 +252,23 @@ struct ThreadSafeMacroTests {
         )
         let output = expanded.nonWhitespaceDescription
 
-        #expect(output.contains("privatelet_state:ConcurrencyMacros.Mutex<_State>"))
-        #expect(output.contains("privatestruct_State:Sendable{varcount:Intvarname:String}"))
-        #expect(output.contains("privatefuncinLock<Result:Sendable>(_mutation:@Sendable(inout_State)->Result)->Result{_state.mutate(mutation)}"))
+        #expect(output.contains("privatelet_threadSafeStorage:ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>"))
+        #expect(output.contains("privatestruct_ThreadSafeState:Sendable{varcount:Intvarname:String}"))
+        #expect(output.contains("privatetypealias_ThreadSafeSendable_count=ConcurrencyMacros.ThreadSafeSendabilityCheck<Int>"))
+        #expect(output.contains("privatetypealias_ThreadSafeSendable_name=ConcurrencyMacros.ThreadSafeSendabilityCheck<String>"))
+        #expect(output.contains("privatefuncinLock<Result:Sendable>(_body:@Sendable(inout_ThreadSafeState)throws->Result)rethrows->Result{try_threadSafeStorage.withLock(body)}"))
 
-        #expect(output.contains("get{_state.value.count}"))
-        #expect(output.contains("set{_=_state.set(\\.count,to:newValue)}"))
-        #expect(output.contains("get{_state.value.name}"))
-        #expect(output.contains("set{_=_state.set(\\.name,to:newValue)}"))
+        #expect(output.contains("get{_threadSafeStorage.read(\\.count)}"))
+        #expect(output.contains("set{_threadSafeStorage.write(\\.count,newValue)}"))
+        #expect(output.contains("_modify{yield&_threadSafeStorage[modifying:\\.count]}"))
+        #expect(output.contains("get{_threadSafeStorage.read(\\.name)}"))
+        #expect(output.contains("set{_threadSafeStorage.write(\\.name,newValue)}"))
+        #expect(output.contains("_modify{yield&_threadSafeStorage[modifying:\\.name]}"))
 
         #expect(output.contains("var_count:Int"))
         #expect(output.contains(#"let_name:String="Seed""#))
         #expect(output.contains("_count=count"))
-        #expect(output.contains("self._state=ConcurrencyMacros.Mutex<_State>(_State(count:_count,name:_name))"))
+        #expect(output.contains("self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count,name:_name))"))
     }
 
     @Test("Expands ThreadSafe end-to-end with explicitly typed complex defaults")
@@ -269,13 +291,17 @@ struct ThreadSafeMacroTests {
         )
         let output = expanded.nonWhitespaceDescription
 
-        #expect(output.contains("privatelet_state=ConcurrencyMacros.Mutex<_State>(_State(values:[:],formatter:DateFormatter()))"))
+        #expect(output.contains("privatelet_threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(values:[:],formatter:DateFormatter()))"))
         #expect(output.contains("varvalues:[String:Int]"))
         #expect(output.contains("varformatter:DateFormatter"))
-        #expect(output.contains("get{_state.value.values}"))
-        #expect(output.contains("set{_=_state.set(\\.values,to:newValue)}"))
-        #expect(output.contains("get{_state.value.formatter}"))
-        #expect(output.contains("set{_=_state.set(\\.formatter,to:newValue)}"))
+        #expect(output.contains("privatetypealias_ThreadSafeSendable_values=ConcurrencyMacros.ThreadSafeSendabilityCheck<[String:Int]>"))
+        #expect(output.contains("privatetypealias_ThreadSafeSendable_formatter=ConcurrencyMacros.ThreadSafeSendabilityCheck<DateFormatter>"))
+        #expect(output.contains("get{_threadSafeStorage.read(\\.values)}"))
+        #expect(output.contains("set{_threadSafeStorage.write(\\.values,newValue)}"))
+        #expect(output.contains("_modify{yield&_threadSafeStorage[modifying:\\.values]}"))
+        #expect(output.contains("get{_threadSafeStorage.read(\\.formatter)}"))
+        #expect(output.contains("set{_threadSafeStorage.write(\\.formatter,newValue)}"))
+        #expect(output.contains("_modify{yield&_threadSafeStorage[modifying:\\.formatter]}"))
     }
 
     @Test("Generates initialized internal state for classes without initializers")
@@ -292,17 +318,20 @@ struct ThreadSafeMacroTests {
 
         let expanded = try expandMembers(for: declaration)
 
-        #expect(expanded.count == 3)
+        #expect(expanded.count == 6)
         #expect(
             expanded[0].nonWhitespaceDescription
-                == #"privatelet_state=ConcurrencyMacros.Mutex<_State>(_State(count:0,name:"Seed",nickname:nil))"#
+                == #"privatelet_threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:0,name:"Seed",nickname:nil))"#
         )
-        #expect(expanded[1].nonWhitespaceDescription.contains("privatestruct_State:Sendable"))
+        #expect(expanded[1].nonWhitespaceDescription.contains("privatestruct_ThreadSafeState:Sendable"))
         #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
         #expect(expanded[1].nonWhitespaceDescription.contains("varname:String"))
         #expect(expanded[1].nonWhitespaceDescription.contains("varnickname:String?"))
-        #expect(expanded[2].nonWhitespaceDescription.contains("privatefuncinLock<Result:Sendable>"))
-        #expect(expanded[2].nonWhitespaceDescription.contains("_state.mutate(mutation)"))
+        #expect(expanded[2].nonWhitespaceDescription == "privatetypealias_ThreadSafeSendable_count=ConcurrencyMacros.ThreadSafeSendabilityCheck<Int>")
+        #expect(expanded[3].nonWhitespaceDescription == "privatetypealias_ThreadSafeSendable_name=ConcurrencyMacros.ThreadSafeSendabilityCheck<String>")
+        #expect(expanded[4].nonWhitespaceDescription == "privatetypealias_ThreadSafeSendable_nickname=ConcurrencyMacros.ThreadSafeSendabilityCheck<String?>")
+        #expect(expanded[5].nonWhitespaceDescription.contains("privatefuncinLock<Result:Sendable>"))
+        #expect(expanded[5].nonWhitespaceDescription.contains("try_threadSafeStorage.withLock(body)"))
     }
 
     @Test("Throws diagnostics error when class has no initializer and required property defaults")
@@ -528,7 +557,7 @@ struct ThreadSafeMacroTests {
 
         let expanded = try expandMembers(for: declaration)
 
-        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=ConcurrencyMacros.Mutex<_State>(_State(count:0))")
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:0))")
         #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
     }
 
@@ -548,10 +577,11 @@ struct ThreadSafeMacroTests {
 
         let expanded = try expandMembers(for: declaration)
 
-        #expect(expanded.count == 3)
-        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state:ConcurrencyMacros.Mutex<_State>")
+        #expect(expanded.count == 4)
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_threadSafeStorage:ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>")
         #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
-        #expect(expanded[2].nonWhitespaceDescription.contains("_state.mutate(mutation)"))
+        #expect(expanded[2].nonWhitespaceDescription == "privatetypealias_ThreadSafeSendable_count=ConcurrencyMacros.ThreadSafeSendabilityCheck<Int>")
+        #expect(expanded[3].nonWhitespaceDescription.contains("try_threadSafeStorage.withLock(body)"))
     }
 
     @Test("Generates initialized internal state when class has only convenience initializers")
@@ -570,10 +600,11 @@ struct ThreadSafeMacroTests {
 
         let expanded = try expandMembers(for: declaration)
 
-        #expect(expanded.count == 3)
-        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=ConcurrencyMacros.Mutex<_State>(_State(count:0))")
+        #expect(expanded.count == 4)
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:0))")
         #expect(expanded[1].nonWhitespaceDescription.contains("varcount:Int"))
-        #expect(expanded[2].nonWhitespaceDescription.contains("_state.mutate(mutation)"))
+        #expect(expanded[2].nonWhitespaceDescription == "privatetypealias_ThreadSafeSendable_count=ConcurrencyMacros.ThreadSafeSendabilityCheck<Int>")
+        #expect(expanded[3].nonWhitespaceDescription.contains("try_threadSafeStorage.withLock(body)"))
     }
 
     @Test("Diagnoses required tracked property when class has only convenience initializers")
@@ -683,8 +714,8 @@ struct ThreadSafeMacroTests {
         let expanded = try expandMembers(for: declaration)
 
         #expect(expanded.count == 3)
-        #expect(expanded[0].nonWhitespaceDescription == "privatelet_state=ConcurrencyMacros.Mutex<_State>(_State())")
-        #expect(expanded[1].nonWhitespaceDescription == "privatestruct_State:Sendable{}")
+        #expect(expanded[0].nonWhitespaceDescription == "privatelet_threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState())")
+        #expect(expanded[1].nonWhitespaceDescription == "privatestruct_ThreadSafeState:Sendable{}")
         #expect(expanded[2].nonWhitespaceDescription.contains("privatefuncinLock<Result:Sendable>"))
     }
 
@@ -761,6 +792,9 @@ struct ThreadSafeMacroTests {
         #expect(attribute.identifierTypeName == "ThreadSafeInitializer")
 
         let argumentExpression = try initializerArgumentExpression(in: attribute)
+        #expect(argumentExpression.contains(#"storage:"ConcurrencyMacros.ThreadSafeStorage""#))
+        #expect(argumentExpression.contains(#"state:"_ThreadSafeState""#))
+        #expect(argumentExpression.contains(#"properties:["#))
         #expect(argumentExpression.contains(#""required":ConcurrencyMacros.TypeErased<Int>()"#))
         #expect(argumentExpression.contains(#""optional":ConcurrencyMacros.TypeErased<String?>(value:nil)"#))
         #expect(argumentExpression.contains(#""name":ConcurrencyMacros.TypeErased<String>(value:"Seed")"#))
@@ -786,7 +820,10 @@ struct ThreadSafeMacroTests {
         #expect(expanded.count == 1)
         let attribute = try #require(expanded.first)
         #expect(attribute.identifierTypeName == "ThreadSafeInitializer")
-        #expect(try initializerArgumentExpression(in: attribute).contains("[:"))
+        let argumentExpression = try initializerArgumentExpression(in: attribute)
+        #expect(argumentExpression.contains(#"storage:"ConcurrencyMacros.ThreadSafeStorage""#))
+        #expect(argumentExpression.contains(#"state:"_ThreadSafeState""#))
+        #expect(argumentExpression.contains("properties:[:]"))
     }
 
     @Test("Does not add initializer attribute to convenience initializers")
@@ -1013,13 +1050,15 @@ private extension ThreadSafeMacroTests {
         )
     }
 
-    /// Extracts the single argument expression text from an attribute for assertion use.
+    /// Extracts argument text from an initializer attribute for assertion use.
     ///
     /// - Parameter attribute: Attribute whose first argument should be read.
-    /// - Returns: Normalized argument expression description.
+    /// - Returns: Normalized argument list description.
     func initializerArgumentExpression(in attribute: AttributeSyntax) throws -> String {
-        try attribute
-            .singleArgumentExpressionDescription()
-            .replacingOccurrences(of: "\\", with: "")
+        let arguments = try #require(
+            attribute.arguments?.as(LabeledExprListSyntax.self),
+            "Expected attribute to have arguments"
+        )
+        return arguments.nonWhitespaceDescription.replacingOccurrences(of: "\\", with: "")
     }
 }

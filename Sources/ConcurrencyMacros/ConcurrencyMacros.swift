@@ -11,7 +11,7 @@ import ConcurrencyMacrosRuntime
 ///
 /// The owning class must explicitly conform to either checked `Sendable` or `@unchecked Sendable`.
 /// Checked `Sendable` classes must be `final`.
-@attached(member, names: named(_state), named(_State), named(inLock))
+@attached(member, names: named(_threadSafeStorage), named(_ThreadSafeState), named(inLock), arbitrary)
 @attached(memberAttribute)
 public macro ThreadSafe() = #externalMacro(
     module: "ConcurrencyMacrosImplementation",
@@ -20,7 +20,11 @@ public macro ThreadSafe() = #externalMacro(
 
 /// Rewrites initializer bodies so stored-property assignments populate synthesized lock state.
 @attached(body)
-public macro ThreadSafeInitializer(_ params: [String: Any]) = #externalMacro(
+public macro ThreadSafeInitializer(
+    storage: StaticString,
+    state: StaticString,
+    properties: [String: Any]
+) = #externalMacro(
   module: "ConcurrencyMacrosImplementation",
   type: "ThreadSafeInitializerMacro"
 )

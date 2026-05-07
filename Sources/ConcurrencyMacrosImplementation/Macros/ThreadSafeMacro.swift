@@ -16,7 +16,8 @@ import SwiftSyntaxMacros
 private enum Constant {
     static let trackedMacroName = "ThreadSafeProperty"
     static let initializerMacroName = "ThreadSafeInitializer"
-    static let stateName = "_state"
+    static let storageName = "_threadSafeStorage"
+    static let stateName = "_ThreadSafeState"
 }
 
 /// A macro that makes class properties thread-safe by using an atomic internal state.
@@ -47,6 +48,7 @@ public struct ThreadSafeMacro: MemberMacro {
         let storedProperties = try classDecl.threadSafeStoredProperties()
 
         var members = [DeclSyntax]()
+        let storageType = "\(mode.storageTypeName)<\(Constant.stateName)>"
 
         let hasDesignatedInitializer = classDecl.memberBlock.members.contains { member in
             guard let initializer = member.decl.as(InitializerDeclSyntax.self) else {
@@ -56,7 +58,7 @@ public struct ThreadSafeMacro: MemberMacro {
             return !initializer.isConvenience
         }
         if !hasDesignatedInitializer {
-            // Generate and initialize _state property
+            // Generate and initialize storage directly when no body rewrite is needed.
             let variables = try storedProperties.map { property in
                 guard let defaultValue = property.defaultValueDescription else {
                     throw DiagnosticsError(
@@ -67,38 +69,58 @@ public struct ThreadSafeMacro: MemberMacro {
                 }
                 return "\(property.nameText): \(defaultValue)"
             }
-            let decl = "private let \(Constant.stateName) = ConcurrencyMacros.Mutex<_State>(_State(\(variables.joined(separator: ", "))))"
+            let decl = "private let \(Constant.storageName) = \(storageType)(\(Constant.stateName)(\(variables.joined(separator: ", "))))"
             let stateProperty = DeclSyntax("""
         \(raw: decl)
         """)
             members.append(stateProperty)
         } else {
-            // Generate _state property
+            // Generate storage property for ThreadSafeInitializerMacro to initialize.
             let stateProperty = DeclSyntax("""
-        private let \(raw: Constant.stateName): ConcurrencyMacros.Mutex<_State>
+        private let \(raw: Constant.storageName): \(raw: storageType)
         """)
             members.append(stateProperty)
         }
 
-        // Generate _State struct with the stored properties
+        // Generate _ThreadSafeState struct with the stored properties
         var internalStateFields = ""
         for property in storedProperties {
             internalStateFields += "    var \(property.nameText): \(property.typeDescription)\n"
         }
 
         let internalStateStruct = DeclSyntax("""
-      private struct _State: Sendable {
+      private struct \(raw: Constant.stateName)\(raw: mode.stateConformanceSource) {
       \(raw: internalStateFields)}
       """)
           members.append(internalStateStruct)
 
+        if mode == .checked {
+            for property in storedProperties {
+                let sendabilityCheck = DeclSyntax("""
+          private typealias _ThreadSafeSendable_\(raw: property.nameText) = ConcurrencyMacros.ThreadSafeSendabilityCheck<\(raw: property.typeDescription)>
+          """)
+                members.append(sendabilityCheck)
+            }
+        }
+
         // Generate `inLock` function
-        let mutateFunc = DeclSyntax("""
+        let mutateFunc: DeclSyntax
+        switch mode {
+        case .checked:
+            mutateFunc = DeclSyntax("""
           @discardableResult
-          private func inLock<Result: Sendable>(_ mutation: @Sendable (inout _State) -> Result) -> Result {
-              _state.mutate(mutation)
+          private func inLock<Result: Sendable>(_ body: @Sendable (inout \(raw: Constant.stateName)) throws -> Result) rethrows -> Result {
+              try \(raw: Constant.storageName).withLock(body)
           }
       """)
+        case .unchecked:
+            mutateFunc = DeclSyntax("""
+          @discardableResult
+          private func inLock<Result>(_ body: (inout \(raw: Constant.stateName)) throws -> Result) rethrows -> Result {
+              try \(raw: Constant.storageName).withLock(body)
+          }
+      """)
+        }
         members.append(mutateFunc)
 
         return members
@@ -141,6 +163,7 @@ extension ThreadSafeMacro: MemberAttributeMacro {
         // Add @ThreadSafeInitializer to initializers (not convenience ones)
         if let initDecl = member.as(InitializerDeclSyntax.self),
            !initDecl.isConvenience {
+            let mode = try classDecl.threadSafeMode()
             let storedProperties = try classDecl.threadSafeStoredProperties()
 
             let argumentListExpr: String = {
@@ -155,20 +178,14 @@ extension ThreadSafeMacro: MemberAttributeMacro {
                 return "[\n\(arguments)\n]"
             }()
 
-            let argumentList = LabeledExprListSyntax(
-                [
-                    LabeledExprSyntax(expression: ExprSyntax(stringLiteral: argumentListExpr)),
-                ]
-            )
+            let payloadSource = """
+            storage: "\(mode.storageTypeName)",
+            state: "\(Constant.stateName)",
+            properties: \(argumentListExpr)
+            """
 
             return [
-                AttributeSyntax(
-                    attributeName: IdentifierTypeSyntax(
-                        name: .identifier(Constant.initializerMacroName)),
-                    leftParen: TokenSyntax.leftParenToken(),
-                    arguments: AttributeSyntax.Arguments.argumentList(argumentList),
-                    rightParen: TokenSyntax.rightParenToken()
-                )
+                AttributeSyntax(stringLiteral: "@\(Constant.initializerMacroName)(\(payloadSource))")
             ]
         }
 
