@@ -93,6 +93,36 @@ struct ThreadSafeMacroTests {
         #expect(!expanded.isEmpty)
     }
 
+    @Test("Allows qualified Swift Sendable in checked mode")
+    func allowsQualifiedSwiftSendableInCheckedMode() throws {
+        let declaration = try classDeclaration(
+            in: """
+            final class Example: Swift.Sendable {
+                var count: Int = 0
+            }
+            """
+        )
+
+        let expanded = try expandMembers(for: declaration)
+
+        #expect(!expanded.isEmpty)
+    }
+
+    @Test("Allows qualified unchecked Swift Sendable")
+    func allowsQualifiedUncheckedSwiftSendable() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example: @unchecked Swift.Sendable {
+                var formatter: DateFormatter = DateFormatter()
+            }
+            """
+        )
+
+        let expanded = try expandMembers(for: declaration)
+
+        #expect(!expanded.isEmpty)
+    }
+
     @Test("Diagnoses ignored mutable state in checked mode")
     func diagnosesIgnoredMutableStateInCheckedMode() throws {
         let declaration = try classDeclaration(
@@ -130,12 +160,46 @@ struct ThreadSafeMacroTests {
         #expect(!output.contains("varunmanaged:Int"))
     }
 
+    @Test("Unchecked mode ignores qualified ThreadSafeIgnored mutable state")
+    func uncheckedModeIgnoresQualifiedThreadSafeIgnoredMutableState() throws {
+        let declaration = try classDeclaration(
+            in: """
+            final class Example: @unchecked Sendable {
+                @ConcurrencyMacros.ThreadSafeIgnored var unmanaged: Int = 0
+                var managed: Int = 1
+            }
+            """
+        )
+
+        let expanded = try expandMembers(for: declaration)
+        let output = expanded.map(\.nonWhitespaceDescription).joined(separator: "")
+
+        #expect(output.contains("varmanaged:Int"))
+        #expect(!output.contains("varunmanaged:Int"))
+    }
+
     @Test("Does not add ThreadSafeProperty to ignored property")
     func doesNotAddThreadSafePropertyToIgnoredProperty() throws {
         let declaration = try classDeclaration(
             in: """
             final class Example: @unchecked Sendable {
                 @ThreadSafeIgnored var unmanaged: Int = 0
+            }
+            """
+        )
+        let property = try declaration.memberDecl(at: 0)
+
+        let expanded = try expandAttributes(attachedTo: declaration, member: property)
+
+        #expect(expanded.isEmpty)
+    }
+
+    @Test("Does not add ThreadSafeProperty to qualified ignored property")
+    func doesNotAddThreadSafePropertyToQualifiedIgnoredProperty() throws {
+        let declaration = try classDeclaration(
+            in: """
+            final class Example: @unchecked Sendable {
+                @ConcurrencyMacros.ThreadSafeIgnored var unmanaged: Int = 0
             }
             """
         )

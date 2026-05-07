@@ -40,6 +40,12 @@ struct ConcurrencyMacrosTests {
         }
     }
 
+    @ThreadSafe
+    private final class UncheckedIgnoredThreadSafeStore: @unchecked Sendable {
+        @ThreadSafeIgnored var unmanaged = NonSendableOperationState(value: 1)
+        var count: Int = 0
+    }
+
     @Test("ThreadSafe compiles with a single import")
     func threadSafeCompilesWithSingleImport() {
         let counter = Counter(count: 1)
@@ -51,6 +57,17 @@ struct ConcurrencyMacrosTests {
 
         #expect(counter.count == 2)
         #expect(counter.label == "next")
+    }
+
+    @Test("ThreadSafe unchecked mode allows ignored mutable state end-to-end")
+    func threadSafeUncheckedModeAllowsIgnoredMutableStateEndToEnd() {
+        let store = UncheckedIgnoredThreadSafeStore()
+
+        store.count = 2
+        store.unmanaged.value += 1
+
+        #expect(store.count == 2)
+        #expect(store.unmanaged.value == 2)
     }
 
     @Test("withTimeout compiles with a single import and returns result")
