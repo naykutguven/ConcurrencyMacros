@@ -160,8 +160,8 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
             let storageArgument = arguments.first(where: { $0.label?.text == "storage" }),
             let stateArgument = arguments.first(where: { $0.label?.text == "state" }),
             let propertiesArgument = arguments.first(where: { $0.label?.text == "properties" }),
-            let storageType = stringLiteralValue(from: storageArgument.expression),
-            let stateType = stringLiteralValue(from: stateArgument.expression),
+            let storageType = typeNameLiteralValue(from: storageArgument.expression),
+            let stateType = typeNameLiteralValue(from: stateArgument.expression),
             let propertiesExpression = propertiesArgument.expression.as(DictionaryExprSyntax.self)
         else {
             let diagnosticNode = arguments.first?.expression ?? ExprSyntax(stringLiteral: "")
@@ -176,12 +176,12 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         return InitializerPayload(storageType: storageType, stateType: stateType, propertyElements: propertyElements)
     }
 
-    private static func stringLiteralValue(from expression: ExprSyntax) -> String? {
+    private static func typeNameLiteralValue(from expression: ExprSyntax) -> String? {
         guard
             let literal = expression.as(StringLiteralExprSyntax.self),
             literal.segments.count == 1,
             let segment = literal.segments.first?.as(StringSegmentSyntax.self),
-            !segment.content.text.isEmpty
+            segment.content.text.isValidThreadSafeTypeName
         else {
             return nil
         }
@@ -1563,5 +1563,31 @@ private extension String {
 
         return identifierHead.contains(firstScalar)
             && unicodeScalars.dropFirst().allSatisfy { identifierBody.contains($0) }
+    }
+
+    var isValidThreadSafeTypeName: Bool {
+        !isEmpty && split(separator: ".", omittingEmptySubsequences: false).allSatisfy { component in
+            String(component).isValidThreadSafeTypeComponent
+        }
+    }
+
+    private var isValidThreadSafeTypeComponent: Bool {
+        isValidThreadSafeIdentifier && !isSwiftKeyword
+    }
+
+    private var isSwiftKeyword: Bool {
+        switch self {
+        case "associatedtype", "class", "deinit", "enum", "extension", "fileprivate",
+             "func", "import", "init", "inout", "internal", "let", "open", "operator",
+             "private", "precedencegroup", "protocol", "public", "rethrows", "static",
+             "struct", "subscript", "typealias", "var", "break", "case", "catch",
+             "continue", "default", "defer", "do", "else", "fallthrough", "for",
+             "guard", "if", "in", "repeat", "return", "throw", "switch", "where",
+             "while", "as", "Any", "false", "is", "nil", "self", "Self", "super",
+             "throws", "true", "try":
+            return true
+        default:
+            return false
+        }
     }
 }

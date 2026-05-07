@@ -73,6 +73,105 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Diagnoses malformed storage payload")
+    func diagnosesMalformedStoragePayload() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(value: Int) {
+                    self.value = value
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage(", state: "_ThreadSafeState", properties: ["value": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(storage: "class", state: "_ThreadSafeState", properties: ["value": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+        )
+    }
+
+    @Test("Diagnoses malformed state payload")
+    func diagnosesMalformedStatePayload() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(value: Int) {
+                    self.value = value
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState>", properties: ["value": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "struct", properties: ["value": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+        )
+    }
+
+    @Test("Diagnoses missing payload labels")
+    func diagnosesMissingPayloadLabels() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(value: Int) {
+                    self.value = value
+                }
+            }
+            """
+        )
+
+        try assertInitializerDiagnostic(
+            attributeSource: #"@ThreadSafeInitializer("ConcurrencyMacros.ThreadSafeStorage", "_ThreadSafeState", ["value": Storage<Int>()])"#,
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+        )
+    }
+
+    @Test("Diagnoses empty storage and state payloads")
+    func diagnosesEmptyStorageAndStatePayloads() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(value: Int) {
+                    self.value = value
+                }
+            }
+            """
+        )
+
+        for attributeSource in [
+            #"@ThreadSafeInitializer(storage: "", state: "_ThreadSafeState", properties: ["value": Storage<Int>()])"#,
+            #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "", properties: ["value": Storage<Int>()])"#,
+        ] {
+            try assertInitializerDiagnostic(
+                attributeSource: attributeSource,
+                for: declaration,
+                expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+                expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
+            )
+        }
+    }
+
     @Test("Diagnoses staging local collision with initializer parameter")
     func diagnosesStagingLocalCollisionWithInitializerParameter() throws {
         let declaration = try initializerInStruct(

@@ -140,7 +140,8 @@ extension VariableDeclSyntax {
 private extension TokenSyntax {
     var isReservedThreadSafeStoredPropertyName: Bool {
         switch text {
-        case "_state", "_State", "inLock":
+        case "_threadSafeStorage", "_ThreadSafeState", "inLock",
+             "_state", "_State":
             return true
         default:
             return false
