@@ -53,7 +53,13 @@ public struct ThreadSafeMethodMacro: BodyMacro {
         }
 
         let trackedPropertyNames = Set(try classDecl.threadSafeStoredProperties().map(\.nameText))
-        try validate(function, attribute: attribute, trackedPropertyNames: trackedPropertyNames)
+        let ownerTypeNames = Set([classDecl.name.text, "Self"])
+        try validate(
+            function,
+            attribute: attribute,
+            trackedPropertyNames: trackedPropertyNames,
+            ownerTypeNames: ownerTypeNames
+        )
 
         guard let body = function.body else {
             return []
@@ -122,7 +128,8 @@ private func threadSafeClass(
 private func validate(
     _ function: FunctionDeclSyntax,
     attribute: AttributeSyntax,
-    trackedPropertyNames: Set<String>
+    trackedPropertyNames: Set<String>,
+    ownerTypeNames: Set<String>
 ) throws {
     if let shadowedParameter = function.parameterLocalNames.first(where: { trackedPropertyNames.contains($0) }) {
         throw shadowingDiagnostic(syntax: function.signature.parameterClause, name: shadowedParameter)
@@ -132,7 +139,11 @@ private func validate(
         return
     }
 
-    if let failure = firstValidationFailure(in: Syntax(body), trackedPropertyNames: trackedPropertyNames) {
+    if let failure = firstValidationFailure(
+        in: Syntax(body),
+        trackedPropertyNames: trackedPropertyNames,
+        ownerTypeNames: ownerTypeNames
+    ) {
         switch failure {
         case .closure(let closure):
             throw DiagnosticsError(
@@ -197,7 +208,8 @@ private enum ThreadSafeMethodValidationFailure {
 
 private func firstValidationFailure(
     in syntax: Syntax,
-    trackedPropertyNames: Set<String>
+    trackedPropertyNames: Set<String>,
+    ownerTypeNames: Set<String>
 ) -> ThreadSafeMethodValidationFailure? {
     if let closure = syntax.as(ClosureExprSyntax.self) {
         return .closure(closure)
@@ -212,7 +224,10 @@ private func firstValidationFailure(
     }
 
     if let call = syntax.as(FunctionCallExprSyntax.self),
-       call.calledExpression.isUnsupportedThreadSafeMethodCall(trackedPropertyNames: trackedPropertyNames) {
+       call.calledExpression.isUnsupportedThreadSafeMethodCall(
+           trackedPropertyNames: trackedPropertyNames,
+           ownerTypeNames: ownerTypeNames
+       ) {
         return .unsupportedCall(call)
     }
 
@@ -230,7 +245,11 @@ private func firstValidationFailure(
     }
 
     for child in syntax.children(viewMode: .sourceAccurate) {
-        if let failure = firstValidationFailure(in: child, trackedPropertyNames: trackedPropertyNames) {
+        if let failure = firstValidationFailure(
+            in: child,
+            trackedPropertyNames: trackedPropertyNames,
+            ownerTypeNames: ownerTypeNames
+        ) {
             return failure
         }
     }
@@ -301,7 +320,7 @@ private func threadSafeMethodReplacements(
 
     if let memberAccess = syntax.as(MemberAccessExprSyntax.self),
        let base = memberAccess.base,
-       base.trimmedDescription == "self" {
+       base.withoutThreadSafeMethodParentheses.trimmedDescription == "self" {
         let name = memberAccess.declName.baseName.text
         if trackedPropertyNames.contains(name) {
             return [
@@ -337,32 +356,57 @@ private func threadSafeMethodReplacements(
 }
 
 private extension ExprSyntax {
-    func isUnsupportedThreadSafeMethodCall(trackedPropertyNames: Set<String>) -> Bool {
-        if isThreadSafeMethodTrackedPropertyMemberCall(trackedPropertyNames: trackedPropertyNames) {
+    var withoutThreadSafeMethodParentheses: ExprSyntax {
+        guard let tuple = self.as(TupleExprSyntax.self),
+              tuple.elements.count == 1,
+              let element = tuple.elements.first,
+              element.label == nil,
+              element.trailingComma == nil
+        else {
+            return self
+        }
+
+        return element.expression.withoutThreadSafeMethodParentheses
+    }
+
+    func isUnsupportedThreadSafeMethodCall(
+        trackedPropertyNames: Set<String>,
+        ownerTypeNames: Set<String>
+    ) -> Bool {
+        let expression = withoutThreadSafeMethodParentheses
+
+        if expression.isThreadSafeMethodTrackedPropertyMemberCall(trackedPropertyNames: trackedPropertyNames) {
             return false
         }
 
-        if self.as(DeclReferenceExprSyntax.self) != nil {
+        if expression.as(DeclReferenceExprSyntax.self) != nil {
             return true
         }
 
-        return isRootedOnSelf
+        if expression.isRootedOnSelf {
+            return true
+        }
+
+        return expression.isThreadSafeMethodOwnerTypeMemberAccess(ownerTypeNames: ownerTypeNames)
     }
 
     func isThreadSafeMethodTrackedPropertyMemberCall(trackedPropertyNames: Set<String>) -> Bool {
-        guard let memberAccess = self.as(MemberAccessExprSyntax.self),
+        let expression = withoutThreadSafeMethodParentheses
+
+        guard let memberAccess = expression.as(MemberAccessExprSyntax.self),
               let base = memberAccess.base
         else {
             return false
         }
 
-        if let reference = base.as(DeclReferenceExprSyntax.self) {
+        let normalizedBase = base.withoutThreadSafeMethodParentheses
+        if let reference = normalizedBase.as(DeclReferenceExprSyntax.self) {
             return trackedPropertyNames.contains(reference.baseName.text)
         }
 
-        if let baseMemberAccess = base.as(MemberAccessExprSyntax.self),
+        if let baseMemberAccess = normalizedBase.as(MemberAccessExprSyntax.self),
            let baseExpression = baseMemberAccess.base,
-           baseExpression.trimmedDescription == "self" {
+           baseExpression.withoutThreadSafeMethodParentheses.trimmedDescription == "self" {
             return trackedPropertyNames.contains(baseMemberAccess.declName.baseName.text)
         }
 
@@ -370,16 +414,31 @@ private extension ExprSyntax {
     }
 
     var isRootedOnSelf: Bool {
-        if trimmedDescription == "self" {
+        let expression = withoutThreadSafeMethodParentheses
+
+        if expression.trimmedDescription == "self" {
             return true
         }
 
-        if let memberAccess = self.as(MemberAccessExprSyntax.self),
+        if let memberAccess = expression.as(MemberAccessExprSyntax.self),
            let base = memberAccess.base {
             return base.isRootedOnSelf
         }
 
         return false
+    }
+
+    func isThreadSafeMethodOwnerTypeMemberAccess(ownerTypeNames: Set<String>) -> Bool {
+        let expression = withoutThreadSafeMethodParentheses
+
+        guard let memberAccess = expression.as(MemberAccessExprSyntax.self),
+              let base = memberAccess.base?.withoutThreadSafeMethodParentheses,
+              let reference = base.as(DeclReferenceExprSyntax.self)
+        else {
+            return false
+        }
+
+        return ownerTypeNames.contains(reference.baseName.text)
     }
 }
 

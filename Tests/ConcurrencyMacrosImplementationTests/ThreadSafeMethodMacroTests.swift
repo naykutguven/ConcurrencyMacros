@@ -96,6 +96,32 @@ struct ThreadSafeMethodMacroTests {
         #expect(output.contains("_threadSafeState.items.append(value+1)"))
     }
 
+    @Test("Rewrites parenthesized self property references")
+    func rewritesParenthesizedSelfPropertyReferences() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Store: Sendable {
+                var count: Int = 0
+                var items: [Int] = []
+
+                @ThreadSafeMethod
+                func update(_ value: Int) {
+                    (self).count += 1
+                    ((self)).items.append(value)
+                }
+            }
+            """
+        )
+
+        let body = try expandBody(for: function)
+
+        #expect(body.count == 1)
+        let output = body[0].nonWhitespaceDescription
+        #expect(output.contains("_threadSafeState.count+=1"))
+        #expect(output.contains("_threadSafeState.items.append(value)"))
+    }
+
     @Test("Rejects unqualified helper calls")
     func rejectsUnqualifiedHelperCalls() throws {
         let function = try firstAttributedFunction(
@@ -123,6 +149,33 @@ struct ThreadSafeMethodMacroTests {
         )
     }
 
+    @Test("Rejects parenthesized unqualified helper calls")
+    func rejectsParenthesizedUnqualifiedHelperCalls() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func refresh() {
+                    (helper)()
+                }
+
+                func helper() {
+                    count += 1
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: "'@ThreadSafeMethod' does not support function or self-method calls while holding the storage lock; use inLock explicitly around the statements that need the lock.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
+        )
+    }
+
     @Test("Rejects self helper calls")
     func rejectsSelfHelperCalls() throws {
         let function = try firstAttributedFunction(
@@ -134,6 +187,60 @@ struct ThreadSafeMethodMacroTests {
                 @ThreadSafeMethod
                 func refresh() {
                     self.helper()
+                }
+
+                func helper() {
+                    count += 1
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: "'@ThreadSafeMethod' does not support function or self-method calls while holding the storage lock; use inLock explicitly around the statements that need the lock.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
+        )
+    }
+
+    @Test("Rejects parenthesized self helper calls")
+    func rejectsParenthesizedSelfHelperCalls() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func refresh() {
+                    (self.helper)()
+                }
+
+                func helper() {
+                    count += 1
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: "'@ThreadSafeMethod' does not support function or self-method calls while holding the storage lock; use inLock explicitly around the statements that need the lock.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
+        )
+    }
+
+    @Test("Rejects type-qualified owner method reference calls")
+    func rejectsTypeQualifiedOwnerMethodReferenceCalls() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func refresh() {
+                    Self.helper(self)()
                 }
 
                 func helper() {
