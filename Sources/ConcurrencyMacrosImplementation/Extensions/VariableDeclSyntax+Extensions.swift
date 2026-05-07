@@ -9,6 +9,9 @@ import Foundation
 import SwiftDiagnostics
 import SwiftSyntax
 
+private let threadSafeUnmanagedStateMigrationHint =
+    "mark intentionally unmanaged state with @ThreadSafeIgnored and @unchecked Sendable"
+
 enum ThreadSafeStoredPropertyExtraction {
     case ignored
     case intentionallyIgnored
@@ -56,14 +59,14 @@ extension VariableDeclSyntax {
                 throw DiagnosticsError(
                     threadSafe: accessorBlock,
                     id: "propertyObserversUnsupported",
-                    message: "@ThreadSafe does not support property observers on stored property '\(name.text)' in 1.0."
+                    message: "@ThreadSafe does not support property observers on stored property '\(name.text)'; remove the observers or \(threadSafeUnmanagedStateMigrationHint)."
                 )
             }
 
             throw DiagnosticsError(
                 threadSafe: accessorBlock,
                 id: "computedPropertyUnsupported",
-                message: "@ThreadSafe does not support computed property '\(name.text)' in 1.0."
+                message: "@ThreadSafe does not support computed mutable property '\(name.text)'; remove the accessor or \(threadSafeUnmanagedStateMigrationHint)."
             )
         }
 
@@ -72,14 +75,14 @@ extension VariableDeclSyntax {
                 throw DiagnosticsError(
                     threadSafe: unsupportedAttribute,
                     id: "propertyWrappersUnsupported",
-                    message: "@ThreadSafe does not support property wrapper '\(wrapperName)' on stored property '\(name.text)' in 1.0."
+                    message: "@ThreadSafe does not support property wrapper '\(wrapperName)' on stored property '\(name.text)'; remove the wrapper or \(threadSafeUnmanagedStateMigrationHint)."
                 )
             }
 
             throw DiagnosticsError(
                 threadSafe: self,
                 id: "propertyAttributesUnsupported",
-                message: "@ThreadSafe does not support attributes on stored property '\(name.text)' in 1.0."
+                message: "@ThreadSafe does not support attribute on stored property '\(name.text)'; remove the attribute or \(threadSafeUnmanagedStateMigrationHint)."
             )
         }
 
@@ -87,7 +90,7 @@ extension VariableDeclSyntax {
             throw DiagnosticsError(
                 threadSafe: unsupportedModifier,
                 id: "propertyModifiersUnsupported",
-                message: "@ThreadSafe does not support modifier '\(unsupportedModifier.name.text)' on stored property '\(name.text)' in 1.0."
+                message: "@ThreadSafe does not support modifier '\(unsupportedModifier.name.text)' on stored property '\(name.text)'; remove the modifier or \(threadSafeUnmanagedStateMigrationHint)."
             )
         }
 
