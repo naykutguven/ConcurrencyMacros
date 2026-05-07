@@ -35,6 +35,15 @@ public struct ThreadSafeMacro: MemberMacro {
                 message: "@ThreadSafe can only be attached to class declarations."
             )
         }
+        let mode = try classDecl.threadSafeMode()
+        if mode == .checked && classDecl.hasThreadSafeIgnoredMutableState {
+            throw DiagnosticsError(
+                threadSafe: classDecl,
+                id: "ignoredStateRequiresUncheckedSendable",
+                message: "@ThreadSafeIgnored mutable state requires '@unchecked Sendable' because checked Sendable cannot verify unmanaged state."
+            )
+        }
+
         let storedProperties = try classDecl.threadSafeStoredProperties()
 
         var members = [DeclSyntax]()
@@ -112,7 +121,7 @@ extension ThreadSafeMacro: MemberAttributeMacro {
         // Add @ThreadSafeProperty to stored var properties
         if let property = member.as(VariableDeclSyntax.self) {
             switch try property.threadSafeStoredProperty() {
-            case .ignored:
+            case .ignored, .intentionallyIgnored:
                 return []
             case .tracked:
                 guard !property.hasThreadSafePropertyAttribute else {

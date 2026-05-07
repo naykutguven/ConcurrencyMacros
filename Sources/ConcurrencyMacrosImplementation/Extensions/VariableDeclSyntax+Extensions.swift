@@ -11,6 +11,7 @@ import SwiftSyntax
 
 enum ThreadSafeStoredPropertyExtraction {
     case ignored
+    case intentionallyIgnored
     case tracked(ThreadSafeStoredProperty)
 }
 
@@ -19,6 +20,10 @@ extension VariableDeclSyntax {
     func threadSafeStoredProperty() throws -> ThreadSafeStoredPropertyExtraction {
         guard bindingSpecifier.text == "var" else {
             return .ignored
+        }
+
+        if hasThreadSafeIgnoredAttribute {
+            return .intentionallyIgnored
         }
 
         guard bindings.count == 1, let binding = bindings.first else {
@@ -126,6 +131,10 @@ extension VariableDeclSyntax {
     var hasThreadSafePropertyAttribute: Bool {
         attributes.contains { $0.isThreadSafePropertyAttribute }
     }
+
+    var hasThreadSafeIgnoredAttribute: Bool {
+        attributes.contains { $0.isThreadSafeIgnoredAttribute }
+    }
 }
 
 private extension TokenSyntax {
@@ -182,11 +191,21 @@ private extension AttributeListSyntax.Element {
             .replacingOccurrences(of: " ", with: "")
         return name == "ThreadSafeProperty" || name.hasSuffix(".ThreadSafeProperty")
     }
+
+    var isThreadSafeIgnoredAttribute: Bool {
+        guard let attribute = self.as(AttributeSyntax.self) else {
+            return false
+        }
+        let name = attribute.attributeName.trimmedDescription
+            .replacingOccurrences(of: " ", with: "")
+        return name == "ThreadSafeIgnored" || name.hasSuffix(".ThreadSafeIgnored")
+    }
 }
 
 private extension AttributeListSyntax {
     var firstUnsupportedThreadSafeStoredPropertyAttribute: AttributeSyntax? {
-        for element in self where !element.isThreadSafePropertyAttribute {
+        for element in self
+            where !element.isThreadSafePropertyAttribute && !element.isThreadSafeIgnoredAttribute {
             if let attribute = element.as(AttributeSyntax.self) {
                 return attribute
             }

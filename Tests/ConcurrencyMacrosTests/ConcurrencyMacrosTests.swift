@@ -11,7 +11,7 @@ import Testing
 @Suite("ConcurrencyMacros")
 struct ConcurrencyMacrosTests {
     @ThreadSafe
-    private final class Counter {
+    private final class Counter: Sendable {
         var count: Int
         var label: String = "seed"
 
@@ -465,7 +465,7 @@ private enum NamespaceCollisionFixtures {
     enum TypeErased<Value> {}
 
     @ThreadSafe
-    final class InitializedCounter {
+    final class InitializedCounter: Sendable {
         var count: Int
         var label = "seed"
 
@@ -475,7 +475,7 @@ private enum NamespaceCollisionFixtures {
     }
 
     @ThreadSafe
-    final class DefaultedCounter {
+    final class DefaultedCounter: Sendable {
         var count: Int = 0
     }
 

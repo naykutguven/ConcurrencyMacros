@@ -40,12 +40,118 @@ struct ThreadSafeMacroTests {
         )
     }
 
+    @Test("Diagnoses missing explicit Sendable conformance")
+    func diagnosesMissingExplicitSendableConformance() throws {
+        let declaration = try classDeclaration(
+            in: """
+            final class Example {
+                var count: Int = 0
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe requires the class to explicitly conform to 'Sendable' or '@unchecked Sendable'.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "sendableConformanceRequired"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Diagnoses checked Sendable on non-final class")
+    func diagnosesCheckedSendableOnNonFinalClass() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example: Sendable {
+                var count: Int = 0
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe checked Sendable classes must be 'final'; mark the class 'final' or use '@unchecked Sendable' if subclass state is intentionally outside macro checking.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "finalClassRequired"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Allows unchecked Sendable on non-final class")
+    func allowsUncheckedSendableOnNonFinalClass() throws {
+        let declaration = try classDeclaration(
+            in: """
+            class Example: @unchecked Sendable {
+                var formatter: DateFormatter = DateFormatter()
+            }
+            """
+        )
+
+        let expanded = try expandMembers(for: declaration)
+
+        #expect(!expanded.isEmpty)
+    }
+
+    @Test("Diagnoses ignored mutable state in checked mode")
+    func diagnosesIgnoredMutableStateInCheckedMode() throws {
+        let declaration = try classDeclaration(
+            in: """
+            final class Example: Sendable {
+                @ThreadSafeIgnored var count: Int = 0
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafeIgnored mutable state requires '@unchecked Sendable' because checked Sendable cannot verify unmanaged state.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "ignoredStateRequiresUncheckedSendable"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
+    @Test("Unchecked mode ignores ThreadSafeIgnored mutable state")
+    func uncheckedModeIgnoresThreadSafeIgnoredMutableState() throws {
+        let declaration = try classDeclaration(
+            in: """
+            final class Example: @unchecked Sendable {
+                @ThreadSafeIgnored var unmanaged: Int = 0
+                var managed: Int = 1
+            }
+            """
+        )
+
+        let expanded = try expandMembers(for: declaration)
+        let output = expanded.map(\.nonWhitespaceDescription).joined(separator: "")
+
+        #expect(output.contains("varmanaged:Int"))
+        #expect(!output.contains("varunmanaged:Int"))
+    }
+
+    @Test("Does not add ThreadSafeProperty to ignored property")
+    func doesNotAddThreadSafePropertyToIgnoredProperty() throws {
+        let declaration = try classDeclaration(
+            in: """
+            final class Example: @unchecked Sendable {
+                @ThreadSafeIgnored var unmanaged: Int = 0
+            }
+            """
+        )
+        let property = try declaration.memberDecl(at: 0)
+
+        let expanded = try expandAttributes(attachedTo: declaration, member: property)
+
+        #expect(expanded.isEmpty)
+    }
+
     @Test("Expands ThreadSafe end-to-end with property and initializer rewriting")
     func expandsThreadSafeEndToEnd() {
         let sourceFile = Parser.parse(
             source: """
             @ThreadSafe
-            class Example {
+            final class Example: Sendable {
                 var count: Int
                 var name = "Seed"
 
@@ -84,7 +190,7 @@ struct ThreadSafeMacroTests {
         let sourceFile = Parser.parse(
             source: """
             @ThreadSafe
-            class Example {
+            final class Example: Sendable {
                 var values: [String: Int] = [:]
                 var formatter: DateFormatter = DateFormatter()
             }
@@ -112,7 +218,7 @@ struct ThreadSafeMacroTests {
     func generatesInitializedInternalStateWithoutInitializer() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var count: Int = 0
                 var name = "Seed"
                 var nickname: String?
@@ -139,7 +245,7 @@ struct ThreadSafeMacroTests {
     func throwsDiagnosticsErrorWhenRequiredPropertyHasNoDefault() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var count: Int
             }
             """
@@ -162,7 +268,7 @@ struct ThreadSafeMacroTests {
     func diagnosesComplexInferredDefaultsWithoutExplicitTypeAnnotations() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var formatter = DateFormatter()
             }
             """
@@ -181,7 +287,7 @@ struct ThreadSafeMacroTests {
     func diagnosesMultiBindingMutableStoredProperties() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var first: Int = 1, second: Int = 2
             }
             """
@@ -200,7 +306,7 @@ struct ThreadSafeMacroTests {
     func diagnosesPropertyWrappersOnTrackedStoredProperties() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 @Clamped var count: Int = 0
             }
             """
@@ -219,7 +325,7 @@ struct ThreadSafeMacroTests {
     func diagnosesNonWrapperAttributesOnTrackedStoredProperties() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 @available(*, deprecated) var count: Int = 0
             }
             """
@@ -238,7 +344,7 @@ struct ThreadSafeMacroTests {
     func diagnosesGlobalActorAttributesOnTrackedStoredPropertiesAsAttributes() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 @MainActor var count: Int = 0
             }
             """
@@ -265,7 +371,7 @@ struct ThreadSafeMacroTests {
         for testCase in cases {
             let declaration = try classDeclaration(
                 in: """
-                class Example {
+                final class Example: Sendable {
                     \(testCase.declaration)
                 }
                 """
@@ -285,7 +391,7 @@ struct ThreadSafeMacroTests {
     func diagnosesComputedPropertiesBecauseTheyAreNotStoredState() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var computed: Int { 1 }
             }
             """
@@ -304,7 +410,7 @@ struct ThreadSafeMacroTests {
     func diagnosesObserversOnMutableStoredProperties() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var count: Int = 0 {
                     didSet {
                         print(count)
@@ -330,7 +436,7 @@ struct ThreadSafeMacroTests {
         for propertyName in cases {
             let declaration = try classDeclaration(
                 in: """
-                class Example {
+                final class Example: Sendable {
                     var \(propertyName): Int = 0
                 }
                 """
@@ -350,7 +456,7 @@ struct ThreadSafeMacroTests {
     func tracksStoredPropertiesWithAccessControlModifiers() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 private var count: Int = 0
             }
             """
@@ -366,7 +472,7 @@ struct ThreadSafeMacroTests {
     func generatesUninitializedInternalStateWithInitializer() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var count: Int
 
                 init(count: Int) {
@@ -388,7 +494,7 @@ struct ThreadSafeMacroTests {
     func generatesInitializedInternalStateWithOnlyConvenienceInitializers() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var count: Int = 0
 
                 convenience init(flag: Bool) {
@@ -410,7 +516,7 @@ struct ThreadSafeMacroTests {
     func diagnosesRequiredTrackedPropertyWithOnlyConvenienceInitializers() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var count: Int
 
                 convenience init(flag: Bool) {
@@ -445,7 +551,7 @@ struct ThreadSafeMacroTests {
     func storedPropertyExtractorDefaultsOptionalSpellingsToNil() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var shorthand: String?
                 var generic: Optional<Int>
                 var qualified: Swift.Optional<Double>
@@ -465,7 +571,7 @@ struct ThreadSafeMacroTests {
     func storedPropertyExtractorInfersNegativeNumericLiteralTypes() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var integer = -1
                 var double = -1.0
             }
@@ -483,7 +589,7 @@ struct ThreadSafeMacroTests {
     func storedPropertyExtractorDetectsQualifiedThreadSafePropertyAttributes() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 @ConcurrencyMacros.ThreadSafeProperty var count: Int = 0
             }
             """
@@ -504,7 +610,7 @@ struct ThreadSafeMacroTests {
     func generatesEmptyInternalStateWhenNoMutableStoredPropertiesExist() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 let id: Int = 1
             }
             """
@@ -522,7 +628,7 @@ struct ThreadSafeMacroTests {
     func addsPropertyAttributeToMutableStoredProperty() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var count: Int = 0
             }
             """
@@ -539,7 +645,7 @@ struct ThreadSafeMacroTests {
     func doesNotAddPropertyAttributeToImmutableProperty() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 let count: Int = 0
             }
             """
@@ -555,7 +661,7 @@ struct ThreadSafeMacroTests {
     func skipsPropertyAlreadyMarkedThreadSafe() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 @ThreadSafeProperty var count: Int = 0
             }
             """
@@ -571,7 +677,7 @@ struct ThreadSafeMacroTests {
     func addsInitializerAttributeToDesignatedInitializer() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var required: Int
                 var optional: String?
                 var name = "Seed"
@@ -600,7 +706,7 @@ struct ThreadSafeMacroTests {
     func usesEmptyDictionaryForInitializerWhenNoMutableStoredPropertiesExist() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 let id: Int
 
                 init(id: Int) {
@@ -623,7 +729,7 @@ struct ThreadSafeMacroTests {
     func skipsConvenienceInitializers() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 var count: Int = 0
 
                 init() {}
@@ -679,7 +785,7 @@ struct ThreadSafeMacroTests {
     func returnsNoAttributesForUnsupportedMembers() throws {
         let declaration = try classDeclaration(
             in: """
-            class Example {
+            final class Example: Sendable {
                 func performWork() {}
             }
             """
