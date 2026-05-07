@@ -406,7 +406,7 @@ struct ThreadSafeMacroTests {
         )
 
         try assertThreadSafeDiagnostic(
-            expectedMessage: "@ThreadSafe does not support property wrapper 'Clamped' on stored property 'count'; remove the wrapper or mark intentionally unmanaged state with @ThreadSafeIgnored and @unchecked Sendable.",
+            expectedMessage: "@ThreadSafe does not support property wrapper 'Clamped' on stored property 'count'; remove the wrapper or mark the property with @ThreadSafeIgnored and make the owning class conform as @unchecked Sendable.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyWrappersUnsupported"),
             operation: {
                 _ = try expandMembers(for: declaration)
@@ -425,7 +425,7 @@ struct ThreadSafeMacroTests {
         )
 
         try assertThreadSafeDiagnostic(
-            expectedMessage: "@ThreadSafe does not support attribute on stored property 'count'; remove the attribute or mark intentionally unmanaged state with @ThreadSafeIgnored and @unchecked Sendable.",
+            expectedMessage: "@ThreadSafe does not support attribute on stored property 'count'; remove the attribute or mark the property with @ThreadSafeIgnored and make the owning class conform as @unchecked Sendable.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyAttributesUnsupported"),
             operation: {
                 _ = try expandMembers(for: declaration)
@@ -444,7 +444,7 @@ struct ThreadSafeMacroTests {
         )
 
         try assertThreadSafeDiagnostic(
-            expectedMessage: "@ThreadSafe does not support attribute on stored property 'count'; remove the attribute or mark intentionally unmanaged state with @ThreadSafeIgnored and @unchecked Sendable.",
+            expectedMessage: "@ThreadSafe does not support attribute on stored property 'count'; remove the attribute or mark the property with @ThreadSafeIgnored and make the owning class conform as @unchecked Sendable.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyAttributesUnsupported"),
             operation: {
                 _ = try expandMembers(for: declaration)
@@ -471,7 +471,7 @@ struct ThreadSafeMacroTests {
             )
 
             try assertThreadSafeDiagnostic(
-                expectedMessage: "@ThreadSafe does not support modifier '\(testCase.modifier)' on stored property '\(testCase.name)'; remove the modifier or mark intentionally unmanaged state with @ThreadSafeIgnored and @unchecked Sendable.",
+                expectedMessage: "@ThreadSafe does not support modifier '\(testCase.modifier)' on stored property '\(testCase.name)'; remove the modifier or mark the property with @ThreadSafeIgnored and make the owning class conform as @unchecked Sendable.",
                 expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyModifiersUnsupported"),
                 operation: {
                     _ = try expandMembers(for: declaration)
@@ -491,7 +491,7 @@ struct ThreadSafeMacroTests {
         )
 
         try assertThreadSafeDiagnostic(
-            expectedMessage: "@ThreadSafe does not support computed mutable property 'computed'; remove the accessor or mark intentionally unmanaged state with @ThreadSafeIgnored and @unchecked Sendable.",
+            expectedMessage: "@ThreadSafe does not support computed property 'computed'; remove the accessor or mark the property with @ThreadSafeIgnored and make the owning class conform as @unchecked Sendable.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "computedPropertyUnsupported"),
             operation: {
                 _ = try expandMembers(for: declaration)
@@ -514,7 +514,7 @@ struct ThreadSafeMacroTests {
         )
 
         try assertThreadSafeDiagnostic(
-            expectedMessage: "@ThreadSafe does not support property observers on stored property 'count'; remove the observers or mark intentionally unmanaged state with @ThreadSafeIgnored and @unchecked Sendable.",
+            expectedMessage: "@ThreadSafe does not support property observers on stored property 'count'; remove the observers or mark the property with @ThreadSafeIgnored and make the owning class conform as @unchecked Sendable.",
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "propertyObserversUnsupported"),
             operation: {
                 _ = try expandMembers(for: declaration)

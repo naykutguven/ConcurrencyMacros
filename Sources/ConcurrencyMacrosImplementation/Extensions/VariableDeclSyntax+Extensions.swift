@@ -10,7 +10,7 @@ import SwiftDiagnostics
 import SwiftSyntax
 
 private let threadSafeUnmanagedStateMigrationHint =
-    "mark intentionally unmanaged state with @ThreadSafeIgnored and @unchecked Sendable"
+    "mark the property with @ThreadSafeIgnored and make the owning class conform as @unchecked Sendable"
 
 enum ThreadSafeStoredPropertyExtraction {
     case ignored
@@ -66,7 +66,7 @@ extension VariableDeclSyntax {
             throw DiagnosticsError(
                 threadSafe: accessorBlock,
                 id: "computedPropertyUnsupported",
-                message: "@ThreadSafe does not support computed mutable property '\(name.text)'; remove the accessor or \(threadSafeUnmanagedStateMigrationHint)."
+                message: "@ThreadSafe does not support computed property '\(name.text)'; remove the accessor or \(threadSafeUnmanagedStateMigrationHint)."
             )
         }
 
