@@ -11,7 +11,7 @@ import ConcurrencyMacrosRuntime
 ///
 /// The owning class must explicitly conform to either checked `Sendable` or `@unchecked Sendable`.
 /// Checked `Sendable` classes must be `final`.
-@attached(member, names: named(_threadSafeStorage), named(_ThreadSafeState), named(inLock), arbitrary)
+@attached(member, names: named(_state), named(_State), named(inLock))
 @attached(memberAttribute)
 public macro ThreadSafe() = #externalMacro(
     module: "ConcurrencyMacrosImplementation",
@@ -33,6 +33,9 @@ public macro ThreadSafeProperty() = #externalMacro(
 )
 
 /// Marker reserved for the `@ThreadSafe` redesign.
+///
+/// This shell macro currently emits no peers and is consumed by `@ThreadSafe`
+/// in the redesign tasks that follow.
 ///
 /// When consumed by `@ThreadSafe`, this represents intentionally unmanaged mutable
 /// state and requires the owning class to use `@unchecked Sendable`.

@@ -6,7 +6,9 @@
 import SwiftSyntax
 import SwiftSyntaxMacros
 
-/// Rewrites synchronous instance method bodies to execute under `@ThreadSafe` storage.
+/// Temporary pass-through shell for the `@ThreadSafe` redesign.
+///
+/// Task 7 adds the lock-wrapping rewrite.
 public struct ThreadSafeMethodMacro: BodyMacro {
     public static func expansion(
         of _: AttributeSyntax,
