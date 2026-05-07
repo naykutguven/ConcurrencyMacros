@@ -25,6 +25,35 @@ struct ThreadSafeStorageTests {
         var value: NonSendableValue
     }
 
+    private enum ExpectedError: Error, Equatable {
+        case failed
+    }
+
+    private actor StartGate {
+        private var continuations: [CheckedContinuation<Void, Never>] = []
+        private var isOpen = false
+
+        func wait() async {
+            if isOpen {
+                return
+            }
+
+            await withCheckedContinuation { continuation in
+                continuations.append(continuation)
+            }
+        }
+
+        func open() {
+            isOpen = true
+            let continuations = continuations
+            self.continuations.removeAll()
+
+            for continuation in continuations {
+                continuation.resume()
+            }
+        }
+    }
+
     @Test("Reads and writes checked state members")
     func readsAndWritesCheckedStateMembers() {
         let storage = ThreadSafeStorage(State(count: 1, items: ["a"]))
@@ -60,6 +89,29 @@ struct ThreadSafeStorageTests {
         #expect(storage.read(\.items) == ["a", "b", "c"])
     }
 
+    @Test("withLock releases checked storage lock after throwing")
+    func withLockReleasesCheckedStorageLockAfterThrowing() {
+        let storage = ThreadSafeStorage(State(count: 2, items: ["a"]))
+        var capturedError: ExpectedError?
+
+        do {
+            try storage.withLock { state in
+                state.count += 1
+                throw ExpectedError.failed
+            }
+        } catch let error as ExpectedError {
+            capturedError = error
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+
+        #expect(capturedError == .failed)
+        #expect(storage.read(\.count) == 3)
+
+        storage.write(\.count, 4)
+        #expect(storage.read(\.count) == 4)
+    }
+
     @Test("Unchecked storage accepts non-Sendable state")
     func uncheckedStorageAcceptsNonSendableState() {
         let storage = UncheckedThreadSafeStorage(UncheckedState(value: NonSendableValue(1)))
@@ -72,15 +124,24 @@ struct ThreadSafeStorageTests {
     @Test("Checked storage supports concurrent modifying access")
     func checkedStorageSupportsConcurrentModifyingAccess() async {
         let storage = ThreadSafeStorage(State(count: 0, items: []))
+        let gate = StartGate()
+        let taskCount = 16
+        let incrementsPerTask = 1_000
 
         await withTaskGroup(of: Void.self) { group in
-            for _ in 0..<200 {
+            for _ in 0..<taskCount {
                 group.addTask {
-                    storage[modifying: \.count] += 1
+                    await gate.wait()
+
+                    for _ in 0..<incrementsPerTask {
+                        storage[modifying: \.count] += 1
+                    }
                 }
             }
+
+            await gate.open()
         }
 
-        #expect(storage.read(\.count) == 200)
+        #expect(storage.read(\.count) == taskCount * incrementsPerTask)
     }
 }

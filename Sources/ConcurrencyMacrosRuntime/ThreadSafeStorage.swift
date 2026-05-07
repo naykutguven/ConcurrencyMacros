@@ -46,7 +46,7 @@ public final class ThreadSafeStorage<State: Sendable>: @unchecked Sendable {
     /// `_modify` intentionally holds the unfair lock across the yielded inout member mutation.
     public subscript<Member: Sendable>(modifying keyPath: WritableKeyPath<State, Member>) -> Member {
         _read {
-            yield core.read(keyPath)
+            yield core[modifying: keyPath]
         }
         _modify {
             yield &core[modifying: keyPath]
@@ -91,7 +91,7 @@ public final class UncheckedThreadSafeStorage<State>: @unchecked Sendable {
     /// `_modify` intentionally holds the unfair lock across the yielded inout member mutation.
     public subscript<Member>(modifying keyPath: WritableKeyPath<State, Member>) -> Member {
         _read {
-            yield core.read(keyPath)
+            yield core[modifying: keyPath]
         }
         _modify {
             yield &core[modifying: keyPath]
@@ -102,6 +102,9 @@ public final class UncheckedThreadSafeStorage<State>: @unchecked Sendable {
 // MARK: - ThreadSafeStorageCore
 
 /// Shared storage core that keeps pointer-backed state alive while accessors yield under lock.
+///
+/// This private core owns the manually managed pointer for its full lifetime, and every pointee
+/// access happens only while `lock` is held, keeping the unchecked sendability assertion local.
 private final class ThreadSafeStorageCore<State>: @unchecked Sendable {
     private let lock = OSAllocatedUnfairLock()
     private let pointer: UnsafeMutablePointer<State>
