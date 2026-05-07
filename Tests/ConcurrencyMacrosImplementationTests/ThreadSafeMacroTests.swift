@@ -690,6 +690,16 @@ struct ThreadSafeMacroTests {
 
         #expect(expanded.isEmpty)
     }
+
+    @Test("ThreadSafe helper macros are registered by plugin")
+    func threadSafeHelperMacrosAreRegisteredByPlugin() {
+        let plugin = ConcurrencyMacrosPlugin()
+        let macroNames = plugin.providingMacros.map { String(describing: $0) }
+
+        #expect(macroNames.contains("ThreadSafeMacro"))
+        #expect(macroNames.contains("ThreadSafeIgnoredMacro"))
+        #expect(macroNames.contains("ThreadSafeMethodMacro"))
+    }
 }
 
 private extension ThreadSafeMacroTests {

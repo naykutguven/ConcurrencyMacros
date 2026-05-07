@@ -7,8 +7,11 @@
 
 import ConcurrencyMacrosRuntime
 
-/// Expands on classes to synthesize a lock-backed internal state and lock helpers.
-@attached(member, names: named(_state), named(_State), named(inLock))
+/// Expands on classes to synthesize lock-backed state, property accessors, and lock helpers.
+///
+/// The owning class must explicitly conform to either checked `Sendable` or `@unchecked Sendable`.
+/// Checked `Sendable` classes must be `final`.
+@attached(member, names: named(_threadSafeStorage), named(_ThreadSafeState), named(inLock), arbitrary)
 @attached(memberAttribute)
 public macro ThreadSafe() = #externalMacro(
     module: "ConcurrencyMacrosImplementation",
@@ -27,6 +30,23 @@ public macro ThreadSafeInitializer(_ params: [String: Any]) = #externalMacro(
 public macro ThreadSafeProperty() = #externalMacro(
     module: "ConcurrencyMacrosImplementation",
     type: "ThreadSafePropertyMacro"
+)
+
+/// Marks mutable instance state as intentionally unmanaged by `@ThreadSafe`.
+///
+/// This marker is accepted only when the owning `@ThreadSafe` class explicitly uses
+/// `@unchecked Sendable`.
+@attached(peer)
+public macro ThreadSafeIgnored() = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "ThreadSafeIgnoredMacro"
+)
+
+/// Runs a synchronous instance method body under the `@ThreadSafe` storage lock.
+@attached(body)
+public macro ThreadSafeMethod() = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "ThreadSafeMethodMacro"
 )
 
 /// Deduplicates concurrent in-flight actor method work by key.

@@ -16,6 +16,8 @@ struct ConcurrencyMacrosPlugin: CompilerPlugin {
         ThreadSafeMacro.self,
         ThreadSafeInitializerMacro.self,
         ThreadSafePropertyMacro.self,
+        ThreadSafeIgnoredMacro.self,
+        ThreadSafeMethodMacro.self,
         SingleFlightActorMacro.self,
         SingleFlightClassMacro.self,
         StreamBridgeMacro.self,
