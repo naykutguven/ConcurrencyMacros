@@ -49,10 +49,10 @@ public macro ThreadSafeIgnored() = #externalMacro(
     type: "ThreadSafeIgnoredMacro"
 )
 
-/// Reserved for `@ThreadSafe` method locking.
+/// Wraps a synchronous `@ThreadSafe` instance method in the synthesized storage lock.
 ///
-/// This shell macro currently preserves the original method body until the
-/// lock-wrapping rewrite lands later in the redesign.
+/// Tracked stored-property references in the method body are rewritten to the locked
+/// state for the duration of the method call.
 @attached(body)
 public macro ThreadSafeMethod() = #externalMacro(
     module: "ConcurrencyMacrosImplementation",

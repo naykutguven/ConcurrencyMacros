@@ -46,6 +46,18 @@ struct ConcurrencyMacrosTests {
         var count: Int = 0
     }
 
+    @ThreadSafe
+    private final class MethodCounter: Sendable {
+        var count: Int = 0
+
+        @ThreadSafeMethod
+        func incrementFromSnapshot() -> Int {
+            let next = count + 1
+            count = next
+            return count
+        }
+    }
+
     @Test("ThreadSafe compiles with a single import")
     func threadSafeCompilesWithSingleImport() {
         let counter = Counter(count: 1)
@@ -68,6 +80,22 @@ struct ConcurrencyMacrosTests {
 
         #expect(store.count == 2)
         #expect(store.unmanaged.value == 2)
+    }
+
+    @Test("ThreadSafeMethod locks a synchronous method end-to-end")
+    func threadSafeMethodLocksSynchronousMethodEndToEnd() async {
+        let counter = MethodCounter()
+        let iterations = 1_000
+
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<iterations {
+                group.addTask {
+                    _ = counter.incrementFromSnapshot()
+                }
+            }
+        }
+
+        #expect(counter.count == iterations)
     }
 
     @Test("withTimeout compiles with a single import and returns result")

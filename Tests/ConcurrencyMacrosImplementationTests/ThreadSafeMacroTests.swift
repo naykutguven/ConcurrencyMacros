@@ -944,27 +944,6 @@ struct ThreadSafeMacroTests {
         #expect(peers.isEmpty)
     }
 
-    @Test("ThreadSafeMethod shell macro preserves original body")
-    func threadSafeMethodShellMacroPreservesOriginalBody() throws {
-        let declaration = try #require(
-            try firstDeclaration(
-                in: """
-                func increment() -> Int {
-                    count += 1
-                    return count
-                }
-                """
-            ).as(FunctionDeclSyntax.self)
-        )
-
-        let body = try ThreadSafeMethodMacro.expansion(
-            of: AttributeSyntax(attributeName: IdentifierTypeSyntax(name: .identifier("ThreadSafeMethod"))),
-            providingBodyFor: declaration,
-            in: BasicMacroExpansionContext()
-        )
-
-        #expect(body.map(\.nonWhitespaceDescription) == ["count+=1", "returncount"])
-    }
 }
 
 private extension ThreadSafeMacroTests {
