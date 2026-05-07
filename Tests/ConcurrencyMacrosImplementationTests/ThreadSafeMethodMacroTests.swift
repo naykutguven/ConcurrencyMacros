@@ -18,6 +18,9 @@ struct ThreadSafeMethodMacroTests {
         )
     }
 
+    private static let callUnsupportedMessage =
+        "'@ThreadSafeMethod' only supports calls rooted on tracked properties while holding the storage lock; use inLock explicitly for method calls or other helper calls."
+
     @Test("Wraps sync method body and rewrites bare and self tracked references")
     func wrapsSyncMethodBodyAndRewritesTrackedReferences() throws {
         let function = try firstAttributedFunction(
@@ -144,7 +147,7 @@ struct ThreadSafeMethodMacroTests {
 
         assertThreadSafeMethodDiagnostic(
             for: function,
-            expectedMessage: "'@ThreadSafeMethod' does not support function or self-method calls while holding the storage lock; use inLock explicitly around the statements that need the lock.",
+            expectedMessage: Self.callUnsupportedMessage,
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
         )
     }
@@ -171,7 +174,7 @@ struct ThreadSafeMethodMacroTests {
 
         assertThreadSafeMethodDiagnostic(
             for: function,
-            expectedMessage: "'@ThreadSafeMethod' does not support function or self-method calls while holding the storage lock; use inLock explicitly around the statements that need the lock.",
+            expectedMessage: Self.callUnsupportedMessage,
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
         )
     }
@@ -198,7 +201,7 @@ struct ThreadSafeMethodMacroTests {
 
         assertThreadSafeMethodDiagnostic(
             for: function,
-            expectedMessage: "'@ThreadSafeMethod' does not support function or self-method calls while holding the storage lock; use inLock explicitly around the statements that need the lock.",
+            expectedMessage: Self.callUnsupportedMessage,
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
         )
     }
@@ -225,7 +228,7 @@ struct ThreadSafeMethodMacroTests {
 
         assertThreadSafeMethodDiagnostic(
             for: function,
-            expectedMessage: "'@ThreadSafeMethod' does not support function or self-method calls while holding the storage lock; use inLock explicitly around the statements that need the lock.",
+            expectedMessage: Self.callUnsupportedMessage,
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
         )
     }
@@ -252,7 +255,107 @@ struct ThreadSafeMethodMacroTests {
 
         assertThreadSafeMethodDiagnostic(
             for: function,
-            expectedMessage: "'@ThreadSafeMethod' does not support function or self-method calls while holding the storage lock; use inLock explicitly around the statements that need the lock.",
+            expectedMessage: Self.callUnsupportedMessage,
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
+        )
+    }
+
+    @Test("Rejects metatype owner method reference calls")
+    func rejectsMetatypeOwnerMethodReferenceCalls() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func refresh() {
+                    Counter.self.helper(self)()
+                }
+
+                func helper() {
+                    count += 1
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: Self.callUnsupportedMessage,
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
+        )
+    }
+
+    @Test("Rejects parenthesized metatype owner method reference calls")
+    func rejectsParenthesizedMetatypeOwnerMethodReferenceCalls() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func refresh() {
+                    (Counter).self.helper(self)()
+                }
+
+                func helper() {
+                    count += 1
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: Self.callUnsupportedMessage,
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
+        )
+    }
+
+    @Test("Rejects non-tracked free function calls")
+    func rejectsNonTrackedFreeFunctionCalls() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func normalized() -> Int {
+                    max(count, 0)
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: Self.callUnsupportedMessage,
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
+        )
+    }
+
+    @Test("Rejects non-tracked constructor calls")
+    func rejectsNonTrackedConstructorCalls() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func normalized() -> Int {
+                    Int(count)
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: Self.callUnsupportedMessage,
             expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodCallUnsupported")
         )
     }
@@ -293,6 +396,34 @@ struct ThreadSafeMethodMacroTests {
                     struct Snapshot {
                         let count: Int
                     }
+                    count += 1
+                }
+            }
+            """
+        )
+
+        assertThreadSafeMethodDiagnostic(
+            for: function,
+            expectedMessage: "'@ThreadSafeMethod' does not support nested declarations because they can capture or shadow locked state; use inLock around the synchronous statements instead.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "threadSafeMethodNestedDeclarationUnsupported")
+        )
+    }
+
+    @Test("Rejects nested typealias declarations")
+    func rejectsNestedTypealiasDeclarations() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func refresh() {
+                    typealias Owner = Counter
+                    Owner.helper(self)()
+                }
+
+                func helper() {
                     count += 1
                 }
             }
