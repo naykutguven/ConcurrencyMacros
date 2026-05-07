@@ -700,6 +700,41 @@ struct ThreadSafeMacroTests {
         #expect(macroNames.contains("ThreadSafeIgnoredMacro"))
         #expect(macroNames.contains("ThreadSafeMethodMacro"))
     }
+
+    @Test("ThreadSafeIgnored shell macro emits no peers")
+    func threadSafeIgnoredShellMacroEmitsNoPeers() throws {
+        let declaration = try firstDeclaration(in: "var cache: Int = 0")
+
+        let peers = try ThreadSafeIgnoredMacro.expansion(
+            of: AttributeSyntax(attributeName: IdentifierTypeSyntax(name: .identifier("ThreadSafeIgnored"))),
+            providingPeersOf: declaration,
+            in: BasicMacroExpansionContext()
+        )
+
+        #expect(peers.isEmpty)
+    }
+
+    @Test("ThreadSafeMethod shell macro preserves original body")
+    func threadSafeMethodShellMacroPreservesOriginalBody() throws {
+        let declaration = try #require(
+            try firstDeclaration(
+                in: """
+                func increment() -> Int {
+                    count += 1
+                    return count
+                }
+                """
+            ).as(FunctionDeclSyntax.self)
+        )
+
+        let body = try ThreadSafeMethodMacro.expansion(
+            of: AttributeSyntax(attributeName: IdentifierTypeSyntax(name: .identifier("ThreadSafeMethod"))),
+            providingBodyFor: declaration,
+            in: BasicMacroExpansionContext()
+        )
+
+        #expect(body.map(\.nonWhitespaceDescription) == ["count+=1", "returncount"])
+    }
 }
 
 private extension ThreadSafeMacroTests {
