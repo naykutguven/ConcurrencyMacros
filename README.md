@@ -329,6 +329,7 @@ final class SessionStore: Sendable {
 - Rewriting applies to mutable stored properties and designated initializers; convenience initializers are not rewritten.
 - Single-property compound mutations such as `count += 1` and `items.append(value)` run under the generated storage lock.
 - Use generated `inLock` for multi-property invariants.
+- The generated lock is non-recursive; code running under `inLock`, `@ThreadSafeMethod`, or a locked compound mutation must not call back into the same `@ThreadSafe` instance.
 - `@ThreadSafeIgnored` marks intentionally unmanaged mutable state and requires the owning class to conform as `@unchecked Sendable`.
 - `@ThreadSafeMethod` can lock simple synchronous methods, but only member calls rooted on tracked stored properties are allowed inside the wrapped body. Use `inLock` for more complex method bodies.
 

@@ -36,13 +36,10 @@ public macro ThreadSafeProperty() = #externalMacro(
     type: "ThreadSafePropertyMacro"
 )
 
-/// Marker reserved for the `@ThreadSafe` redesign.
+/// Marks mutable state that `@ThreadSafe` should intentionally leave unmanaged.
 ///
-/// This shell macro currently emits no peers and is consumed by `@ThreadSafe`
-/// in the redesign tasks that follow.
-///
-/// When consumed by `@ThreadSafe`, this represents intentionally unmanaged mutable
-/// state and requires the owning class to use `@unchecked Sendable`.
+/// This marker emits no peers by itself. When consumed by `@ThreadSafe`, it
+/// requires the owning class to use `@unchecked Sendable`.
 @attached(peer)
 public macro ThreadSafeIgnored() = #externalMacro(
     module: "ConcurrencyMacrosImplementation",

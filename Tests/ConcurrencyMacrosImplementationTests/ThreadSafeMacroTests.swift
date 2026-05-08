@@ -568,6 +568,78 @@ struct ThreadSafeMacroTests {
         }
     }
 
+    @Test("Diagnoses immutable member names that conflict with synthesized members")
+    func diagnosesImmutableMemberNamesThatConflictWithSynthesizedMembers() throws {
+        let cases = ["_threadSafeStorage", "_ThreadSafeState", "inLock"]
+
+        for memberName in cases {
+            let declaration = try classDeclaration(
+                in: """
+                final class Example: Sendable {
+                    let \(memberName): Int = 0
+                    var count: Int = 0
+                }
+                """
+            )
+
+            try assertThreadSafeDiagnostic(
+                expectedMessage: "@ThreadSafe member name '\(memberName)' conflicts with a synthesized @ThreadSafe member; rename the member.",
+                expectedID: MessageID(domain: "ThreadSafeMacro", id: "reservedMemberName"),
+                operation: {
+                    _ = try expandMembers(for: declaration)
+                }
+            )
+        }
+    }
+
+    @Test("Diagnoses nested member names that conflict with synthesized members")
+    func diagnosesNestedMemberNamesThatConflictWithSynthesizedMembers() throws {
+        let cases = [
+            (name: "_ThreadSafeState", declaration: "struct _ThreadSafeState {}"),
+            (name: "_ThreadSafeState", declaration: "typealias _ThreadSafeState = Int"),
+            (name: "inLock", declaration: "func inLock() {}"),
+        ]
+
+        for testCase in cases {
+            let declaration = try classDeclaration(
+                in: """
+                final class Example: Sendable {
+                    \(testCase.declaration)
+                    var count: Int = 0
+                }
+                """
+            )
+
+            try assertThreadSafeDiagnostic(
+                expectedMessage: "@ThreadSafe member name '\(testCase.name)' conflicts with a synthesized @ThreadSafe member; rename the member.",
+                expectedID: MessageID(domain: "ThreadSafeMacro", id: "reservedMemberName"),
+                operation: {
+                    _ = try expandMembers(for: declaration)
+                }
+            )
+        }
+    }
+
+    @Test("Diagnoses checked sendability alias names that conflict with synthesized members")
+    func diagnosesCheckedSendabilityAliasNamesThatConflictWithSynthesizedMembers() throws {
+        let declaration = try classDeclaration(
+            in: """
+            final class Example: Sendable {
+                typealias _ThreadSafeSendable_count = Int
+                var count: Int = 0
+            }
+            """
+        )
+
+        try assertThreadSafeDiagnostic(
+            expectedMessage: "@ThreadSafe member name '_ThreadSafeSendable_count' conflicts with a synthesized @ThreadSafe member; rename the member.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "reservedMemberName"),
+            operation: {
+                _ = try expandMembers(for: declaration)
+            }
+        )
+    }
+
     @Test("Tracks stored properties with access-control modifiers")
     func tracksStoredPropertiesWithAccessControlModifiers() throws {
         let declaration = try classDeclaration(

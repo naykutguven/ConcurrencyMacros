@@ -44,8 +44,16 @@ public struct ThreadSafeMacro: MemberMacro {
                 message: "@ThreadSafeIgnored mutable state requires '@unchecked Sendable' because checked Sendable cannot verify unmanaged state."
             )
         }
+        try classDecl.validateNoThreadSafeSynthesizedMemberConflicts(
+            names: [Constant.storageName, Constant.stateName, "inLock"]
+        )
 
         let storedProperties = try classDecl.threadSafeStoredProperties()
+        if mode == .checked {
+            try classDecl.validateNoThreadSafeSynthesizedMemberConflicts(
+                names: Set(storedProperties.map { "_ThreadSafeSendable_\($0.nameText)" })
+            )
+        }
 
         var members = [DeclSyntax]()
         let storageType = "\(mode.storageTypeName)<\(Constant.stateName)>"
@@ -196,5 +204,106 @@ extension ThreadSafeMacro: MemberAttributeMacro {
 private extension InitializerDeclSyntax {
     var isConvenience: Bool {
         modifiers.contains(where: { $0.name.text == "convenience" })
+    }
+}
+
+private struct ThreadSafeSynthesizedMemberConflict {
+    let name: String
+    let syntax: Syntax
+}
+
+private extension ClassDeclSyntax {
+    func validateNoThreadSafeSynthesizedMemberConflicts(names: Set<String>) throws {
+        guard !names.isEmpty else {
+            return
+        }
+
+        for member in memberBlock.members {
+            guard let conflict = member.decl.threadSafeSynthesizedMemberConflict(in: names) else {
+                continue
+            }
+
+            throw DiagnosticsError(
+                threadSafe: conflict.syntax,
+                id: "reservedMemberName",
+                message: "@ThreadSafe member name '\(conflict.name)' conflicts with a synthesized @ThreadSafe member; rename the member."
+            )
+        }
+    }
+}
+
+private extension DeclSyntax {
+    func threadSafeSynthesizedMemberConflict(in names: Set<String>) -> ThreadSafeSynthesizedMemberConflict? {
+        if let variable = self.as(VariableDeclSyntax.self) {
+            // Mutable stored properties already flow through the property extractor so existing
+            // property-specific diagnostics and legacy reserved-name tests stay stable.
+            guard variable.bindingSpecifier.text != "var" else {
+                return nil
+            }
+
+            for binding in variable.bindings {
+                if let conflict = binding.pattern.threadSafeSynthesizedMemberConflict(in: names) {
+                    return conflict
+                }
+            }
+        }
+
+        if let function = self.as(FunctionDeclSyntax.self),
+           names.contains(function.name.text) {
+            return ThreadSafeSynthesizedMemberConflict(name: function.name.text, syntax: Syntax(function))
+        }
+
+        if let structure = self.as(StructDeclSyntax.self),
+           names.contains(structure.name.text) {
+            return ThreadSafeSynthesizedMemberConflict(name: structure.name.text, syntax: Syntax(structure))
+        }
+
+        if let classDecl = self.as(ClassDeclSyntax.self),
+           names.contains(classDecl.name.text) {
+            return ThreadSafeSynthesizedMemberConflict(name: classDecl.name.text, syntax: Syntax(classDecl))
+        }
+
+        if let actor = self.as(ActorDeclSyntax.self),
+           names.contains(actor.name.text) {
+            return ThreadSafeSynthesizedMemberConflict(name: actor.name.text, syntax: Syntax(actor))
+        }
+
+        if let enumeration = self.as(EnumDeclSyntax.self),
+           names.contains(enumeration.name.text) {
+            return ThreadSafeSynthesizedMemberConflict(name: enumeration.name.text, syntax: Syntax(enumeration))
+        }
+
+        if let protocolDecl = self.as(ProtocolDeclSyntax.self),
+           names.contains(protocolDecl.name.text) {
+            return ThreadSafeSynthesizedMemberConflict(name: protocolDecl.name.text, syntax: Syntax(protocolDecl))
+        }
+
+        if let typealiasDecl = self.as(TypeAliasDeclSyntax.self),
+           names.contains(typealiasDecl.name.text) {
+            return ThreadSafeSynthesizedMemberConflict(name: typealiasDecl.name.text, syntax: Syntax(typealiasDecl))
+        }
+
+        return nil
+    }
+}
+
+private extension PatternSyntax {
+    func threadSafeSynthesizedMemberConflict(in names: Set<String>) -> ThreadSafeSynthesizedMemberConflict? {
+        if let identifier = self.as(IdentifierPatternSyntax.self),
+           names.contains(identifier.identifier.text) {
+            return ThreadSafeSynthesizedMemberConflict(
+                name: identifier.identifier.text,
+                syntax: Syntax(identifier)
+            )
+        }
+
+        for child in children(viewMode: .sourceAccurate) {
+            if let pattern = child.as(PatternSyntax.self),
+               let conflict = pattern.threadSafeSynthesizedMemberConflict(in: names) {
+                return conflict
+            }
+        }
+
+        return nil
     }
 }
