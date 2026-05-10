@@ -16,6 +16,7 @@ import SwiftSyntaxMacros
 private enum Constant {
     static let trackedMacroName = "ThreadSafeProperty"
     static let initializerMacroName = "ThreadSafeInitializer"
+    static let methodMacroName = "_ThreadSafeMethod"
     static let storageName = "_threadSafeStorage"
     static let stateName = "_ThreadSafeState"
 }
@@ -197,7 +198,33 @@ extension ThreadSafeMacro: MemberAttributeMacro {
             ]
         }
 
+        // Add the internal body macro to user-marked @ThreadSafeMethod functions.
+        if let function = member.as(FunctionDeclSyntax.self),
+           function.hasThreadSafeMethodAttribute {
+            let storedProperties = try classDecl.threadSafeStoredProperties()
+            let properties = storedProperties
+                .map { "\"\($0.nameText)\"" }
+                .joined(separator: ", ")
+
+            return [
+                AttributeSyntax(stringLiteral: "@\(Constant.methodMacroName)(properties: [\(properties)])")
+            ]
+        }
+
         return []
+    }
+}
+
+private extension FunctionDeclSyntax {
+    var hasThreadSafeMethodAttribute: Bool {
+        attributes.contains { element in
+            guard let attribute = element.as(AttributeSyntax.self) else {
+                return false
+            }
+            let name = attribute.attributeName.trimmedDescription
+                .replacingOccurrences(of: " ", with: "")
+            return name == "ThreadSafeMethod" || name.hasSuffix(".ThreadSafeMethod")
+        }
     }
 }
 

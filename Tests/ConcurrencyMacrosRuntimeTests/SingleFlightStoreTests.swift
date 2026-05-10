@@ -16,12 +16,19 @@ struct SingleFlightStoreTests {
     func nonThrowingStoreDeduplicatesIdenticalConcurrentKeys() async {
         let store = SingleFlightStore<Int>()
         let counter = Support.CounterActor()
+        let probe = Support.CancellationProbeActor()
+        let gate = Support.AsyncGateActor()
 
-        async let first = store.run(key: "same") {
-            await counter.increment()
-            _ = try? await Task.sleep(for: .milliseconds(80))
-            return 7
+        let leader = Task {
+            await store.run(key: "same") {
+                await probe.markStarted()
+                await counter.increment()
+                await gate.wait()
+                return 7
+            }
         }
+
+        await Support.waitUntil({ await probe.started() })
 
         async let second = store.run(key: "same") {
             await counter.increment()
@@ -33,7 +40,10 @@ struct SingleFlightStoreTests {
             return 9
         }
 
-        let firstValue = await first
+        _ = try? await Task.sleep(for: .milliseconds(20))
+        await gate.open()
+
+        let firstValue = await leader.value
         let secondValue = await second
         let thirdValue = await third
 

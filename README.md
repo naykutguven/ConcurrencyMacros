@@ -278,7 +278,7 @@ The macro handles bounded fan-out, cancellation on failure, and stable output or
 | `@ThreadSafeInitializer` | Attached (`body`) | Helper rewrite for initializer assignment staging | Initializers (helper/support) |
 | `@ThreadSafeProperty` | Attached (`accessor`) | Helper rewrite for lock-backed property accessors | Mutable stored properties (helper/support) |
 | `@ThreadSafeIgnored` | Attached (`peer`) | Marks intentionally unmanaged mutable state for unchecked owners | Mutable stored properties (helper/support) |
-| `@ThreadSafeMethod` | Attached (`body`) | Wraps conservative synchronous method bodies in the generated state lock | Instance methods in nominal `@ThreadSafe` classes |
+| `@ThreadSafeMethod` | Attached (`peer`) | Marks conservative synchronous method bodies for generated state-lock wrapping | Instance methods in nominal `@ThreadSafe` classes |
 | `@SingleFlightActor` | Attached (`body`, `peer`) | Deduplicates in-flight actor method work by key | Actor instance methods |
 | `@SingleFlightClass` | Attached (`body`, `peer`) | Deduplicates in-flight class method work by key | `final` class instance methods |
 | `@StreamBridge` | Attached (`body`, `peer`) | Generates `AsyncStream` / `AsyncThrowingStream` wrappers from callback registration methods | Actor/class instance methods |
@@ -405,7 +405,7 @@ final class UserSession: Sendable {
 - The generated lock is non-recursive; code running under `inLock`, `@ThreadSafeMethod`, or a locked compound mutation must not call back into the same `@ThreadSafe` instance.
 - `@ThreadSafeIgnored` marks intentionally unmanaged mutable state and requires the owning class to conform as `@unchecked Sendable`.
 - `@ThreadSafeMethod` can lock simple synchronous methods, but only member calls rooted on tracked stored properties are allowed inside the wrapped body. Use `inLock` for more complex method bodies.
-- Normal app and SDK code should not write `@ThreadSafeInitializer` or `@ThreadSafeProperty`; `@ThreadSafe` attaches those implementation helpers automatically.
+- Normal app and SDK code should not write `@ThreadSafeInitializer`, `@ThreadSafeProperty`, or underscored implementation helpers; `@ThreadSafe` attaches them automatically.
 
 ## `@SingleFlightActor`
 
@@ -603,7 +603,7 @@ Use it for uploads, invalidations, notifications, and other async side-effect wo
 These helper macros support higher-level features and infrastructure setup:
 
 - `@ThreadSafeIgnored`: user-facing marker for intentionally unmanaged state in `@unchecked Sendable` `@ThreadSafe` classes.
-- `@ThreadSafeMethod`: user-facing wrapper for conservative synchronous `@ThreadSafe` method bodies that should run under the generated lock.
+- `@ThreadSafeMethod`: user-facing marker for conservative synchronous `@ThreadSafe` method bodies that should run under the generated lock.
 - `@ThreadSafeInitializer`: internal initializer-body rewrite helper attached automatically by `@ThreadSafe`.
 - `@ThreadSafeProperty`: internal accessor rewrite helper attached automatically by `@ThreadSafe`.
 - `@StreamBridgeDefaults`: declares per-type defaults for `@StreamBridge` (`cancel`, `buffering`, `safety`).

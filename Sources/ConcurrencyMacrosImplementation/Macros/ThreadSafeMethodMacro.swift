@@ -3,13 +3,34 @@
 //  ConcurrencyMacros
 //
 
+import Foundation
 import SwiftDiagnostics
 import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
+/// Marker consumed by `@ThreadSafe` to request a locked method-body rewrite.
+public struct ThreadSafeMethodMacro: PeerMacro {
+    public static func expansion(
+        of _: AttributeSyntax,
+        providingPeersOf declaration: some DeclSyntaxProtocol,
+        in context: some MacroExpansionContext
+    ) throws -> [DeclSyntax] {
+        guard let function = declaration.as(FunctionDeclSyntax.self) else {
+            throw DiagnosticsError(
+                threadSafe: declaration,
+                id: "threadSafeMethodInvalidAttachment",
+                message: "'@ThreadSafeMethod' can only be attached to instance methods in @ThreadSafe classes."
+            )
+        }
+
+        _ = try validateThreadSafeMethodAttachment(function, context: context)
+        return []
+    }
+}
+
 /// Wraps synchronous `@ThreadSafe` instance methods in the class storage lock.
-public struct ThreadSafeMethodMacro: BodyMacro {
+public struct ThreadSafeMethodBodyMacro: BodyMacro {
     private enum Constant {
         static let storageName = "_threadSafeStorage"
         static let stateParameterName = "_threadSafeState"
@@ -20,39 +41,8 @@ public struct ThreadSafeMethodMacro: BodyMacro {
         providingBodyFor declaration: some DeclSyntaxProtocol & WithOptionalCodeBlockSyntax,
         in context: some MacroExpansionContext
     ) throws -> [CodeBlockItemSyntax] {
-        guard let function = declaration.as(FunctionDeclSyntax.self) else {
-            throw DiagnosticsError(
-                threadSafe: declaration,
-                id: "threadSafeMethodInvalidAttachment",
-                message: "'@ThreadSafeMethod' can only be attached to instance methods in @ThreadSafe classes."
-            )
-        }
-
-        guard !function.isStaticOrClassMethod else {
-            throw DiagnosticsError(
-                threadSafe: function,
-                id: "threadSafeMethodStaticUnsupported",
-                message: "'@ThreadSafeMethod' does not support 'static' or 'class' methods."
-            )
-        }
-
-        guard !function.isAsyncFunction else {
-            throw DiagnosticsError(
-                threadSafe: function,
-                id: "threadSafeMethodAsyncUnsupported",
-                message: "'@ThreadSafeMethod' supports synchronous instance methods only; use inLock inside async methods at explicit synchronous boundaries."
-            )
-        }
-
-        guard let classDecl = threadSafeClass(for: function, context: context) else {
-            throw DiagnosticsError(
-                threadSafe: function,
-                id: "threadSafeMethodClassRequired",
-                message: "'@ThreadSafeMethod' can only be used inside a nominal @ThreadSafe class."
-            )
-        }
-
-        let trackedPropertyNames = Set(try classDecl.threadSafeStoredProperties().map(\.nameText))
+        let function = try validateThreadSafeMethodDeclaration(declaration, context: context)
+        let trackedPropertyNames = try threadSafeMethodTrackedPropertyNames(from: attribute)
         try validate(
             function,
             attribute: attribute,
@@ -92,6 +82,84 @@ public struct ThreadSafeMethodMacro: BodyMacro {
             ),
         ]
     }
+}
+
+private func validateThreadSafeMethodDeclaration(
+    _ declaration: some DeclSyntaxProtocol,
+    context: some MacroExpansionContext
+) throws -> FunctionDeclSyntax {
+    guard let function = declaration.as(FunctionDeclSyntax.self) else {
+        throw DiagnosticsError(
+            threadSafe: declaration,
+            id: "threadSafeMethodInvalidAttachment",
+            message: "'@ThreadSafeMethod' can only be attached to instance methods in @ThreadSafe classes."
+        )
+    }
+
+    _ = try validateThreadSafeMethodAttachment(function, context: context)
+    return function
+}
+
+private func validateThreadSafeMethodAttachment(
+    _ function: FunctionDeclSyntax,
+    context: some MacroExpansionContext
+) throws -> ClassDeclSyntax {
+    guard !function.isStaticOrClassMethod else {
+        throw DiagnosticsError(
+            threadSafe: function,
+            id: "threadSafeMethodStaticUnsupported",
+            message: "'@ThreadSafeMethod' does not support 'static' or 'class' methods."
+        )
+    }
+
+    guard !function.isAsyncFunction else {
+        throw DiagnosticsError(
+            threadSafe: function,
+            id: "threadSafeMethodAsyncUnsupported",
+            message: "'@ThreadSafeMethod' supports synchronous instance methods only; use inLock inside async methods at explicit synchronous boundaries."
+        )
+    }
+
+    guard let classDecl = threadSafeClass(for: function, context: context) else {
+        throw DiagnosticsError(
+            threadSafe: function,
+            id: "threadSafeMethodClassRequired",
+            message: "'@ThreadSafeMethod' can only be used inside a nominal @ThreadSafe class."
+        )
+    }
+
+    return classDecl
+}
+
+private func threadSafeMethodTrackedPropertyNames(from attribute: AttributeSyntax) throws -> Set<String> {
+    guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self),
+          let propertiesArgument = arguments.first(where: { $0.label?.text == "properties" }),
+          let array = propertiesArgument.expression.as(ArrayExprSyntax.self)
+    else {
+        throw DiagnosticsError(
+            threadSafe: attribute,
+            id: "threadSafeMethodInvalidPayload",
+            message: "'@_ThreadSafeMethod' requires a generated properties payload."
+        )
+    }
+
+    var propertyNames = Set<String>()
+    for element in array.elements {
+        guard let literal = element.expression.as(StringLiteralExprSyntax.self),
+              literal.segments.count == 1,
+              let segment = literal.segments.first?.as(StringSegmentSyntax.self),
+              segment.content.text.isValidThreadSafeMethodPropertyName
+        else {
+            throw DiagnosticsError(
+                threadSafe: element,
+                id: "threadSafeMethodInvalidPayload",
+                message: "'@_ThreadSafeMethod' property names must be string literals."
+            )
+        }
+        propertyNames.insert(segment.content.text)
+    }
+
+    return propertyNames
 }
 
 private func threadSafeClass(
@@ -269,7 +337,7 @@ private extension CodeBlockItemSyntax {
             return description
         }
 
-        let baseOffset = position.utf8Offset
+        let baseOffset = threadSafeMethodBaseOffset(in: self, description: description)
         var bytes = Array(description.utf8)
         for replacement in replacements.sorted(by: { $0.start > $1.start }) {
             let start = replacement.start - baseOffset
@@ -282,6 +350,20 @@ private extension CodeBlockItemSyntax {
 
         return String(decoding: bytes, as: UTF8.self)
     }
+}
+
+private func threadSafeMethodBaseOffset(
+    in statement: CodeBlockItemSyntax,
+    description: String
+) -> Int {
+    guard let firstToken = statement.firstToken(viewMode: .sourceAccurate),
+          let tokenRange = description.range(of: firstToken.text)
+    else {
+        return statement.position.utf8Offset
+    }
+
+    let tokenOffsetInDescription = description[..<tokenRange.lowerBound].utf8.count
+    return firstToken.positionAfterSkippingLeadingTrivia.utf8Offset - tokenOffsetInDescription
 }
 
 private func threadSafeMethodReplacements(
@@ -411,5 +493,19 @@ private extension PatternSyntax {
         }
 
         return nil
+    }
+}
+
+private extension String {
+    var isValidThreadSafeMethodPropertyName: Bool {
+        guard let firstScalar = unicodeScalars.first else {
+            return false
+        }
+
+        let identifierHead = CharacterSet.letters.union(CharacterSet(charactersIn: "_"))
+        let identifierBody = identifierHead.union(.decimalDigits)
+
+        return identifierHead.contains(firstScalar)
+            && unicodeScalars.dropFirst().allSatisfy { identifierBody.contains($0) }
     }
 }

@@ -12,10 +12,8 @@ import Testing
 
 @Suite("ThreadSafeMethodMacro")
 struct ThreadSafeMethodMacroTests {
-    private var threadSafeMethodAttribute: AttributeSyntax {
-        AttributeSyntax(
-            attributeName: IdentifierTypeSyntax(name: .identifier("ThreadSafeMethod"))
-        )
+    private var emptyThreadSafeMethodBodyAttribute: AttributeSyntax {
+        AttributeSyntax(stringLiteral: "@_ThreadSafeMethod(properties: [])")
     }
 
     private static let callUnsupportedMessage =
@@ -632,11 +630,24 @@ struct ThreadSafeMethodMacroTests {
 
 private extension ThreadSafeMethodMacroTests {
     func expandBody(for function: FunctionDeclSyntax) throws -> [CodeBlockItemSyntax] {
-        try ThreadSafeMethodMacro.expansion(
-            of: threadSafeMethodAttribute,
+        try ThreadSafeMethodBodyMacro.expansion(
+            of: threadSafeMethodBodyAttribute(for: function),
             providingBodyFor: function,
             in: BasicMacroExpansionContext()
         )
+    }
+
+    func threadSafeMethodBodyAttribute(for declaration: some DeclSyntaxProtocol) throws -> AttributeSyntax {
+        guard let function = declaration.as(FunctionDeclSyntax.self),
+              let classDecl = function.nearestEnclosingClassDecl
+        else {
+            return emptyThreadSafeMethodBodyAttribute
+        }
+
+        let properties = try classDecl.threadSafeStoredProperties()
+            .map { "\"\($0.nameText)\"" }
+            .joined(separator: ", ")
+        return AttributeSyntax(stringLiteral: "@_ThreadSafeMethod(properties: [\(properties)])")
     }
 
     func firstAttributedFunction(in source: String) throws -> FunctionDeclSyntax {
@@ -685,8 +696,8 @@ private extension ThreadSafeMethodMacroTests {
         expectedID: MessageID
     ) {
         do {
-            _ = try ThreadSafeMethodMacro.expansion(
-                of: threadSafeMethodAttribute,
+            _ = try ThreadSafeMethodBodyMacro.expansion(
+                of: try threadSafeMethodBodyAttribute(for: declaration),
                 providingBodyFor: declaration,
                 in: BasicMacroExpansionContext()
             )

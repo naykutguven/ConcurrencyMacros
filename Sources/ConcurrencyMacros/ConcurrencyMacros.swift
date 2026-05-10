@@ -46,17 +46,24 @@ public macro ThreadSafeIgnored() = #externalMacro(
     type: "ThreadSafeIgnoredMacro"
 )
 
-/// Wraps a synchronous `@ThreadSafe` instance method in the synthesized storage lock.
+/// Marks a synchronous `@ThreadSafe` instance method to be wrapped in the synthesized storage lock.
 ///
 /// Tracked stored-property references in the method body are rewritten to the locked
 /// state for the duration of the method call. Keep wrapped bodies synchronous and
 /// direct: member calls are allowed only when rooted on tracked stored properties; closures,
 /// nested declarations, key paths, and helper calls are rejected because they can
 /// capture or re-enter lock-backed state.
-@attached(body)
+@attached(peer)
 public macro ThreadSafeMethod() = #externalMacro(
     module: "ConcurrencyMacrosImplementation",
     type: "ThreadSafeMethodMacro"
+)
+
+/// Implementation detail attached by `@ThreadSafe` to apply the method-body rewrite.
+@attached(body)
+public macro _ThreadSafeMethod(properties: [String]) = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "ThreadSafeMethodBodyMacro"
 )
 
 /// Deduplicates concurrent in-flight actor method work by key.

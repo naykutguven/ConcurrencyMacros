@@ -840,6 +840,30 @@ struct ThreadSafeMacroTests {
         #expect(expanded.isEmpty)
     }
 
+    @Test("Adds ThreadSafeMethod body helper with tracked property names")
+    func addsMethodBodyHelperToThreadSafeMethod() throws {
+        let declaration = try classDeclaration(
+            in: """
+            final class Example: Sendable {
+                var count: Int = 0
+                var items: [Int] = []
+
+                @ThreadSafeMethod
+                func update() {
+                    count += 1
+                    items.append(count)
+                }
+            }
+            """
+        )
+        let function = try declaration.memberDecl(at: 2)
+
+        let expanded = try expandAttributes(attachedTo: declaration, member: function)
+
+        #expect(expanded.count == 1)
+        #expect(expanded[0].nonWhitespaceDescription == #"@_ThreadSafeMethod(properties:["count","items"])"#)
+    }
+
     @Test("Adds ThreadSafeInitializer attribute to designated initializers")
     func addsInitializerAttributeToDesignatedInitializer() throws {
         let declaration = try classDeclaration(
@@ -978,6 +1002,7 @@ struct ThreadSafeMacroTests {
         #expect(macroNames.contains("ThreadSafeMacro"))
         #expect(macroNames.contains("ThreadSafeIgnoredMacro"))
         #expect(macroNames.contains("ThreadSafeMethodMacro"))
+        #expect(macroNames.contains("ThreadSafeMethodBodyMacro"))
     }
 
     @Test("ThreadSafeIgnored shell macro emits no peers")
