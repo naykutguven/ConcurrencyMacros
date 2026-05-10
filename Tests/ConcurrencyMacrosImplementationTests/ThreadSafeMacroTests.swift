@@ -545,29 +545,6 @@ struct ThreadSafeMacroTests {
         }
     }
 
-    @Test("Diagnoses legacy synthesized storage names as reserved")
-    func diagnosesLegacySynthesizedStorageNamesAsReserved() throws {
-        let cases = ["_state", "_State"]
-
-        for propertyName in cases {
-            let declaration = try classDeclaration(
-                in: """
-                final class Example: Sendable {
-                    var \(propertyName): Int = 0
-                }
-                """
-            )
-
-            try assertThreadSafeDiagnostic(
-                expectedMessage: "@ThreadSafe property name '\(propertyName)' conflicts with synthesized storage; rename the property.",
-                expectedID: MessageID(domain: "ThreadSafeMacro", id: "reservedPropertyName"),
-                operation: {
-                    _ = try expandMembers(for: declaration)
-                }
-            )
-        }
-    }
-
     @Test("Diagnoses immutable member names that conflict with synthesized members")
     func diagnosesImmutableMemberNamesThatConflictWithSynthesizedMembers() throws {
         let cases = ["_threadSafeStorage", "_ThreadSafeState", "inLock"]

@@ -545,8 +545,10 @@ struct ConcurrencyMacrosTests {
 
 private enum NamespaceCollisionFixtures {
     enum ConcurrencyRuntime {}
-    enum Mutex<Value: Sendable> {}
+    enum ThreadSafeSendabilityCheck<Value: Sendable> {}
+    enum ThreadSafeStorage<State: Sendable> {}
     enum TypeErased<Value> {}
+    enum UncheckedThreadSafeStorage<State> {}
 
     @ThreadSafe
     final class InitializedCounter: Sendable {

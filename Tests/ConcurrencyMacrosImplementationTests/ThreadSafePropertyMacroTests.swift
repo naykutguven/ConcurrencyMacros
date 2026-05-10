@@ -19,7 +19,7 @@ struct ThreadSafePropertyMacroTests {
         )
     }
 
-    @Test("Expands accessor pair for identifier pattern")
+    @Test("Expands accessors for identifier pattern")
     func expandsAccessorPair() throws {
         let accessors = try expandAccessors(for: "var counter: Int")
 
@@ -27,16 +27,6 @@ struct ThreadSafePropertyMacroTests {
         #expect(accessors[0].nonWhitespaceDescription == "get{_threadSafeStorage.read(\\.counter)}")
         #expect(accessors[1].nonWhitespaceDescription == "set{_threadSafeStorage.write(\\.counter,newValue)}")
         #expect(accessors[2].nonWhitespaceDescription == "_modify{yield&_threadSafeStorage[modifying:\\.counter]}")
-    }
-
-    @Test("Uses first binding in a multi-binding declaration")
-    func usesFirstBinding() throws {
-        let accessors = try expandAccessors(for: "var first: Int, second: Int")
-
-        #expect(accessors.count == 3)
-        #expect(accessors[0].nonWhitespaceDescription == "get{_threadSafeStorage.read(\\.first)}")
-        #expect(accessors[1].nonWhitespaceDescription == "set{_threadSafeStorage.write(\\.first,newValue)}")
-        #expect(accessors[2].nonWhitespaceDescription == "_modify{yield&_threadSafeStorage[modifying:\\.first]}")
     }
 
     @Test("Returns no accessors for non-variable declarations")
