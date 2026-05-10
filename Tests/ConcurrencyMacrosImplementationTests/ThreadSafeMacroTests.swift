@@ -599,22 +599,29 @@ struct ThreadSafeMacroTests {
 
     @Test("Diagnoses checked sendability alias names that conflict with synthesized members")
     func diagnosesCheckedSendabilityAliasNamesThatConflictWithSynthesizedMembers() throws {
-        let declaration = try classDeclaration(
-            in: """
-            final class Example: Sendable {
-                typealias _ThreadSafeSendable_count = Int
-                var count: Int = 0
-            }
-            """
-        )
+        let cases = [
+            "typealias _ThreadSafeSendable_count = Int",
+            "var _ThreadSafeSendable_count: Int = 0",
+        ]
 
-        try assertThreadSafeDiagnostic(
-            expectedMessage: "@ThreadSafe member name '_ThreadSafeSendable_count' conflicts with a synthesized @ThreadSafe member; rename the member.",
-            expectedID: MessageID(domain: "ThreadSafeMacro", id: "reservedMemberName"),
-            operation: {
-                _ = try expandMembers(for: declaration)
-            }
-        )
+        for member in cases {
+            let declaration = try classDeclaration(
+                in: """
+                final class Example: Sendable {
+                    \(member)
+                    var count: Int = 0
+                }
+                """
+            )
+
+            try assertThreadSafeDiagnostic(
+                expectedMessage: "@ThreadSafe member name '_ThreadSafeSendable_count' conflicts with a synthesized @ThreadSafe member; rename the member.",
+                expectedID: MessageID(domain: "ThreadSafeMacro", id: "reservedMemberName"),
+                operation: {
+                    _ = try expandMembers(for: declaration)
+                }
+            )
+        }
     }
 
     @Test("Tracks stored properties with access-control modifiers")

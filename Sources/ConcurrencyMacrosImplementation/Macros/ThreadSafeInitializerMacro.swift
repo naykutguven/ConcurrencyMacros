@@ -24,7 +24,11 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         }
 
         guard let arguments = syntax.arguments?.as(LabeledExprListSyntax.self) else {
-            return []
+            throw DiagnosticsError(
+                threadSafe: syntax,
+                id: "invalidInitializerPayload",
+                message: "@ThreadSafeInitializer entries must use string keys and generic storage values."
+            )
         }
 
         let payload = try parsePayload(from: arguments)

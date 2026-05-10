@@ -14,8 +14,8 @@ import Testing
 
 @Suite("ThreadSafeInitializerMacro")
 struct ThreadSafeInitializerMacroTests {
-    @Test("Returns empty expansion when attribute is missing arguments")
-    func returnsEmptyExpansionWhenAttributeHasNoArguments() throws {
+    @Test("Diagnoses missing payload arguments")
+    func diagnosesMissingPayloadArguments() throws {
         let declaration = try initializerInStruct(
             """
             struct Example {
@@ -26,12 +26,12 @@ struct ThreadSafeInitializerMacroTests {
             """
         )
 
-        let expanded = try expandBody(
+        try assertInitializerDiagnostic(
             attributeSource: "@ThreadSafeInitializer",
-            for: declaration
+            for: declaration,
+            expectedMessage: "@ThreadSafeInitializer entries must use string keys and generic storage values.",
+            expectedID: MessageID(domain: "ThreadSafeMacro", id: "invalidInitializerPayload")
         )
-
-        #expect(expanded.isEmpty)
     }
 
     @Test("Returns empty expansion when declaration has no body")

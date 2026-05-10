@@ -72,6 +72,34 @@ struct ThreadSafeMethodMacroTests {
         #expect(output.contains("return_threadSafeState.count"))
     }
 
+    @Test("Rewrites tracked references when leading trivia contains the first token text")
+    func rewritesTrackedReferencesWhenLeadingTriviaContainsFirstTokenText() throws {
+        let function = try firstAttributedFunction(
+            in: """
+            @ThreadSafe
+            final class Counter: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                func next() -> Int {
+                    // let appears here before the statement token
+                    let next = count + 1
+                    count = next
+                    return count
+                }
+            }
+            """
+        )
+
+        let body = try expandBody(for: function)
+
+        #expect(body.count == 1)
+        let output = body[0].nonWhitespaceDescription
+        #expect(output.contains("letnext=_threadSafeState.count+1"))
+        #expect(output.contains("_threadSafeState.count=next"))
+        #expect(output.contains("return_threadSafeState.count"))
+    }
+
     @Test("Allows member calls rooted on tracked property")
     func allowsMemberCallsRootedOnTrackedProperty() throws {
         let function = try firstAttributedFunction(

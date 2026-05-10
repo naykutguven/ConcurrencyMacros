@@ -337,7 +337,7 @@ private extension CodeBlockItemSyntax {
             return description
         }
 
-        let baseOffset = threadSafeMethodBaseOffset(in: self, description: description)
+        let baseOffset = position.utf8Offset
         var bytes = Array(description.utf8)
         for replacement in replacements.sorted(by: { $0.start > $1.start }) {
             let start = replacement.start - baseOffset
@@ -350,20 +350,6 @@ private extension CodeBlockItemSyntax {
 
         return String(decoding: bytes, as: UTF8.self)
     }
-}
-
-private func threadSafeMethodBaseOffset(
-    in statement: CodeBlockItemSyntax,
-    description: String
-) -> Int {
-    guard let firstToken = statement.firstToken(viewMode: .sourceAccurate),
-          let tokenRange = description.range(of: firstToken.text)
-    else {
-        return statement.position.utf8Offset
-    }
-
-    let tokenOffsetInDescription = description[..<tokenRange.lowerBound].utf8.count
-    return firstToken.positionAfterSkippingLeadingTrivia.utf8Offset - tokenOffsetInDescription
 }
 
 private func threadSafeMethodReplacements(

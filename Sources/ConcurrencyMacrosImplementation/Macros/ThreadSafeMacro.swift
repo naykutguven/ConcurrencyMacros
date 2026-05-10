@@ -52,7 +52,8 @@ public struct ThreadSafeMacro: MemberMacro {
         let storedProperties = try classDecl.threadSafeStoredProperties()
         if mode == .checked {
             try classDecl.validateNoThreadSafeSynthesizedMemberConflicts(
-                names: Set(storedProperties.map { "_ThreadSafeSendable_\($0.nameText)" })
+                names: Set(storedProperties.map { "_ThreadSafeSendable_\($0.nameText)" }),
+                includeMutableVariables: true
             )
         }
 
@@ -240,13 +241,19 @@ private struct ThreadSafeSynthesizedMemberConflict {
 }
 
 private extension ClassDeclSyntax {
-    func validateNoThreadSafeSynthesizedMemberConflicts(names: Set<String>) throws {
+    func validateNoThreadSafeSynthesizedMemberConflicts(
+        names: Set<String>,
+        includeMutableVariables: Bool = false
+    ) throws {
         guard !names.isEmpty else {
             return
         }
 
         for member in memberBlock.members {
-            guard let conflict = member.decl.threadSafeSynthesizedMemberConflict(in: names) else {
+            guard let conflict = member.decl.threadSafeSynthesizedMemberConflict(
+                in: names,
+                includeMutableVariables: includeMutableVariables
+            ) else {
                 continue
             }
 
@@ -260,11 +267,14 @@ private extension ClassDeclSyntax {
 }
 
 private extension DeclSyntax {
-    func threadSafeSynthesizedMemberConflict(in names: Set<String>) -> ThreadSafeSynthesizedMemberConflict? {
+    func threadSafeSynthesizedMemberConflict(
+        in names: Set<String>,
+        includeMutableVariables: Bool
+    ) -> ThreadSafeSynthesizedMemberConflict? {
         if let variable = self.as(VariableDeclSyntax.self) {
             // Mutable stored properties already flow through the property extractor so existing
             // property-specific diagnostics and legacy reserved-name tests stay stable.
-            guard variable.bindingSpecifier.text != "var" else {
+            guard includeMutableVariables || variable.bindingSpecifier.text != "var" else {
                 return nil
             }
 
