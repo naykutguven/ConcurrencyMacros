@@ -49,7 +49,7 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         let requiredNames = Set(trackedProperties.filter(\.isRequired).map(\.name))
         var trackedAssignmentsByOffset: [Int: TrackedAssignment] = [:]
         var assignedRequiredNames = Set<String>()
-        var shadowedTrackedNames = initializerInoutParameterLocalNames(
+        var shadowedTrackedNames = initializerParameterLocalNames(
             in: declaration,
             trackedNames: trackedNames
         )
@@ -1270,30 +1270,6 @@ public struct ThreadSafeInitializerMacro: BodyMacro {
         )
     }
 
-    private static func initializerInoutParameterLocalNames(
-        in declaration: some DeclSyntaxProtocol,
-        trackedNames: Set<String>
-    ) -> Set<String> {
-        guard let initializer = declaration.as(InitializerDeclSyntax.self) else {
-            return []
-        }
-
-        return Set(
-            initializer.signature.parameterClause.parameters.compactMap { parameter -> String? in
-                let localName = parameter.secondName?.text ?? parameter.firstName.text
-                guard
-                    localName != "_",
-                    trackedNames.contains(localName),
-                    parameter.type.hasInoutSpecifier
-                else {
-                    return nil
-                }
-
-                return localName
-            }
-        )
-    }
-
     private static func initializerParameterNames(in declaration: some DeclSyntaxProtocol) -> Set<String> {
         guard let initializer = declaration.as(InitializerDeclSyntax.self) else {
             return []
@@ -1542,18 +1518,6 @@ private struct TrackedProperty {
 private struct TrackedAssignment {
     let propertyName: String
     let rightHandSide: ExprSyntax
-}
-
-private extension TypeSyntax {
-    var hasInoutSpecifier: Bool {
-        guard let attributedType = self.as(AttributedTypeSyntax.self) else {
-            return false
-        }
-
-        return attributedType.specifiers.contains { specifier in
-            specifier.as(SimpleTypeSpecifierSyntax.self)?.specifier.text == "inout"
-        }
-    }
 }
 
 private extension String {

@@ -25,10 +25,6 @@ extension VariableDeclSyntax {
             return .ignored
         }
 
-        if hasThreadSafeIgnoredAttribute {
-            return .intentionallyIgnored
-        }
-
         guard bindings.count == 1, let binding = bindings.first else {
             throw DiagnosticsError(
                 threadSafe: self,
@@ -52,6 +48,10 @@ extension VariableDeclSyntax {
                 id: "reservedPropertyName",
                 message: "@ThreadSafe property name '\(name.text)' conflicts with synthesized storage; rename the property."
             )
+        }
+
+        if hasThreadSafeIgnoredAttribute {
+            return .intentionallyIgnored
         }
 
         if let accessorBlock = binding.accessorBlock {

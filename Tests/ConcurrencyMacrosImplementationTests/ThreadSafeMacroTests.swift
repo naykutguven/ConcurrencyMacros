@@ -196,6 +196,29 @@ struct ThreadSafeMacroTests {
         #expect(!output.contains("varunmanaged:Int"))
     }
 
+    @Test("Diagnoses ignored property names that conflict with synthesized storage")
+    func diagnosesIgnoredPropertyNamesThatConflictWithSynthesizedStorage() throws {
+        let cases = ["_threadSafeStorage", "_ThreadSafeState", "inLock"]
+
+        for propertyName in cases {
+            let declaration = try classDeclaration(
+                in: """
+                final class Example: @unchecked Sendable {
+                    @ThreadSafeIgnored var \(propertyName): Int = 0
+                }
+                """
+            )
+
+            try assertThreadSafeDiagnostic(
+                expectedMessage: "@ThreadSafe property name '\(propertyName)' conflicts with synthesized storage; rename the property.",
+                expectedID: MessageID(domain: "ThreadSafeMacro", id: "reservedPropertyName"),
+                operation: {
+                    _ = try expandMembers(for: declaration)
+                }
+            )
+        }
+    }
+
     @Test("Does not add ThreadSafeProperty to ignored property")
     func doesNotAddThreadSafePropertyToIgnoredProperty() throws {
         let declaration = try classDeclaration(
@@ -869,6 +892,32 @@ struct ThreadSafeMacroTests {
 
         #expect(expanded.count == 1)
         #expect(expanded[0].nonWhitespaceDescription == #"@_ThreadSafeMethod(properties:["count","items"])"#)
+    }
+
+    @Test(
+        "Does not add ThreadSafeMethod body helper to invalid method shapes",
+        arguments: [
+            "static func update() {}",
+            "class func update() {}",
+            "func update() async {}",
+        ]
+    )
+    func doesNotAddMethodBodyHelperToInvalidThreadSafeMethodShapes(functionSource: String) throws {
+        let declaration = try classDeclaration(
+            in: """
+            final class Example: Sendable {
+                var count: Int = 0
+
+                @ThreadSafeMethod
+                \(functionSource)
+            }
+            """
+        )
+        let function = try declaration.memberDecl(at: 1)
+
+        let expanded = try expandAttributes(attachedTo: declaration, member: function)
+
+        #expect(expanded.isEmpty)
     }
 
     @Test("Adds ThreadSafeInitializer attribute to designated initializers")

@@ -18,9 +18,11 @@ struct SingleFlightStoreTests {
         let counter = Support.CounterActor()
         let probe = Support.CancellationProbeActor()
         let gate = Support.AsyncGateActor()
+        let secondKeyProbe = Support.HashProbe()
+        let thirdKeyProbe = Support.HashProbe()
 
         let leader = Task {
-            await store.run(key: "same") {
+            await store.run(key: Support.InstrumentedKey("same")) {
                 await probe.markStarted()
                 await counter.increment()
                 await gate.wait()
@@ -30,17 +32,19 @@ struct SingleFlightStoreTests {
 
         await Support.waitUntil({ await probe.started() })
 
-        async let second = store.run(key: "same") {
+        async let second = store.run(key: Support.InstrumentedKey("same", hashProbe: secondKeyProbe)) {
             await counter.increment()
             return 8
         }
 
-        async let third = store.run(key: "same") {
+        async let third = store.run(key: Support.InstrumentedKey("same", hashProbe: thirdKeyProbe)) {
             await counter.increment()
             return 9
         }
 
-        _ = try? await Task.sleep(for: .milliseconds(20))
+        await Support.waitUntil {
+            secondKeyProbe.didHash() && thirdKeyProbe.didHash()
+        }
         await gate.open()
 
         let firstValue = await leader.value

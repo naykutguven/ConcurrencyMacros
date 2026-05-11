@@ -399,8 +399,8 @@ struct ThreadSafeInitializerMacroTests {
             struct Example {
                 init(first: String, second: Int, optionalThird: String?) {
                     self.first = first
-                    optionalThird = optionalThird
-                    second = second + 1
+                    self.optionalThird = optionalThird
+                    self.second = second + 1
                     print(second)
                 }
             }
@@ -459,7 +459,7 @@ struct ThreadSafeInitializerMacroTests {
             struct Example {
                 init(first: String, second: Int) {
                     self.first=first
-                    second=second + 1
+                    self.second=second + 1
                     print(second)
                 }
             }
@@ -541,12 +541,40 @@ struct ThreadSafeInitializerMacroTests {
         )
     }
 
+    @Test("Does not rewrite bare assignments to inout initializer parameters shadowing tracked properties")
+    func doesNotRewriteBareAssignmentsToInoutInitializerParametersShadowingTrackedProperties() throws {
+        let declaration = try initializerInStruct(
+            """
+            struct Example {
+                init(count: inout Int) {
+                    count = 1
+                    self.count = count
+                }
+            }
+            """
+        )
+
+        let expanded = try expandBody(
+            attributeSource: #"@ThreadSafeInitializer(storage: "ConcurrencyMacros.ThreadSafeStorage", state: "_ThreadSafeState", properties: ["count": ConcurrencyMacros.TypeErased<Int>()])"#,
+            for: declaration
+        )
+
+        #expect(
+            expanded.map(\.nonWhitespaceDescription) == [
+                "var_count:Int",
+                "count=1",
+                "_count=count",
+                "self._threadSafeStorage=ConcurrencyMacros.ThreadSafeStorage<_ThreadSafeState>(_ThreadSafeState(count:_count))",
+            ]
+        )
+    }
+
     @Test("Does not rewrite bare assignments to initializer parameters shadowing tracked properties")
     func doesNotRewriteBareAssignmentsToInitializerParametersShadowingTrackedProperties() throws {
         let declaration = try initializerInStruct(
             """
             struct Example {
-                init(count: inout Int) {
+                init(count: Int) {
                     count = 1
                     self.count = count
                 }

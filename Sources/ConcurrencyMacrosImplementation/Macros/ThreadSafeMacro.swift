@@ -202,6 +202,10 @@ extension ThreadSafeMacro: MemberAttributeMacro {
         // Add the internal body macro to user-marked @ThreadSafeMethod functions.
         if let function = member.as(FunctionDeclSyntax.self),
            function.hasThreadSafeMethodAttribute {
+            guard !function.isStaticOrClassMethod, !function.isAsyncFunction else {
+                return []
+            }
+
             let storedProperties = try classDecl.threadSafeStoredProperties()
             let properties = storedProperties
                 .map { "\"\($0.nameText)\"" }
