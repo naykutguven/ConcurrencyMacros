@@ -27,9 +27,6 @@ struct ThreadSafeDiagnostic: DiagnosticMessage {
     }
 }
 
-/// Backward-compatible name used by existing tests.
-typealias SendableDiagnostic = ThreadSafeDiagnostic
-
 extension DiagnosticsError {
     /// Creates a diagnostics error containing one `@ThreadSafe` error-level message.
     ///
