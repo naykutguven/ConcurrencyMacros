@@ -796,10 +796,15 @@ private enum BridgeFailure: Error, Equatable, Sendable {
     case disconnected
 }
 
+@ThreadSafe
+private final class CancellationCounter: Sendable {
+    var count: Int = 0
+}
+
 @StreamBridgeDefaults(cancel: .tokenMethod, buffering: .bufferingNewest(1))
 private final class PriceTicker: Sendable {
     private let value: Int
-    private let cancelCount = Mutex(0)
+    private let cancelCount = CancellationCounter()
 
     init(value: Int) {
         self.value = value
@@ -813,20 +818,18 @@ private final class PriceTicker: Sendable {
         _ = symbol
         handler(value)
         return BridgeObservationToken {
-            self.cancelCount.mutate { count in
-                count += 1
-            }
+            self.cancelCount.count += 1
         }
     }
 
     func cancelledCount() -> Int {
-        cancelCount.value
+        cancelCount.count
     }
 }
 
 @StreamBridgeDefaults(cancel: .tokenMethod, buffering: .bufferingNewest(1))
 private final class SocketBridge: Sendable {
-    private let cancelCount = Mutex(0)
+    private let cancelCount = CancellationCounter()
 
     @StreamBridge(
         as: "messageStream",
@@ -843,13 +846,11 @@ private final class SocketBridge: Sendable {
         onError(.disconnected)
         onClose()
         return BridgeObservationToken {
-            self.cancelCount.mutate { count in
-                count += 1
-            }
+            self.cancelCount.count += 1
         }
     }
 
     func cancelledCount() -> Int {
-        cancelCount.value
+        cancelCount.count
     }
 }

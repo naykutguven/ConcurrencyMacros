@@ -43,12 +43,4 @@ extension DiagnosticsError {
         ])
     }
 
-    /// Creates the legacy property-replacement diagnostic shape.
-    ///
-    /// - Parameters:
-    ///   - syntax: Syntax node associated with the diagnostic.
-    ///   - message: Human-readable diagnostic text.
-    init(syntax: some SyntaxProtocol, message: String) {
-        self.init(threadSafe: syntax, id: "propertyReplacement", message: message)
-    }
 }

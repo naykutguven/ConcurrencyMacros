@@ -183,22 +183,25 @@ struct SingleFlightActorMacroTests {
         )
     }
 
-    @Test("Rejects legacy string literal key arguments")
-    func rejectsLegacyStringLiteralKeyArguments() throws {
-        try assertPeerDiagnostic(
-            source: """
+    @Test("Accepts string literal key expressions")
+    func acceptsStringLiteralKeyExpressions() throws {
+        let (_, bodyOutput) = try expandedOutputs(
+            from: """
             actor ProfileService {
-                @SingleFlightActor(key: "id")
+                @SingleFlightActor(key: "profile")
                 func profile(id: Int) async -> Int { id }
             }
-            """,
-            expectedMessage: "String literal keys are unsupported. Use an expression, for example 'key: { (id: User.ID) in id }'.",
-            expectedID: MessageID(domain: "SingleFlightActorMacro", id: "legacyStringKey")
+            """
         )
+
+        #expect(bodyOutput.contains(#"let__singleFlightKey="profile""#))
+        #expect(bodyOutput.contains("ConcurrencyMacros.__singleFlightRequireSendable(__singleFlightKey)"))
+        #expect(bodyOutput.contains("returnawait__singleFlightStore_"))
+        #expect(bodyOutput.contains(".run(key:__singleFlightKey,operation:__singleFlightOperation)"))
     }
 
-    @Test("Rejects legacy string literal using arguments")
-    func rejectsLegacyStringLiteralUsingArguments() throws {
+    @Test("Rejects string literal using expressions")
+    func rejectsStringLiteralUsingExpressions() throws {
         try assertPeerDiagnostic(
             source: """
             actor ProfileService {
@@ -206,8 +209,8 @@ struct SingleFlightActorMacroTests {
                 func profile(id: Int) async -> Int { id }
             }
             """,
-            expectedMessage: "String literal stores are unsupported. Use an expression, for example 'using: sharedFlightsStore'.",
-            expectedID: MessageID(domain: "SingleFlightActorMacro", id: "legacyStringUsing")
+            expectedMessage: "'using:' must reference an existing store value (identifier or member access).",
+            expectedID: MessageID(domain: "SingleFlightActorMacro", id: "unsupportedUsingExpression")
         )
     }
 

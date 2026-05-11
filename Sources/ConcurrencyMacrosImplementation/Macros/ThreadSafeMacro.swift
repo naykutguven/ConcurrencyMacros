@@ -273,7 +273,7 @@ private extension DeclSyntax {
     ) -> ThreadSafeSynthesizedMemberConflict? {
         if let variable = self.as(VariableDeclSyntax.self) {
             // Mutable stored properties already flow through the property extractor so existing
-            // property-specific diagnostics and legacy reserved-name tests stay stable.
+            // property-specific diagnostics stay stable.
             guard includeMutableVariables || variable.bindingSpecifier.text != "var" else {
                 return nil
             }
