@@ -74,6 +74,21 @@ struct ThreadSafeStorageTests {
         #expect(storage.read(\.items) == ["x"])
     }
 
+    @Test("Read accessor releases checked storage lock before yielding snapshot")
+    func readAccessorReleasesCheckedStorageLockBeforeYieldingSnapshot() async throws {
+        let storage = ThreadSafeStorage(State(count: 0, items: ["x"]))
+
+        let didRead = try await ConcurrencyRuntime.withTimeout(.milliseconds(200)) {
+            storage[modifying: \.items].contains { _ in
+                storage.write(\.count, 1)
+                return true
+            }
+        }
+
+        #expect(didRead)
+        #expect(storage.read(\.count) == 1)
+    }
+
     @Test("withLock mutates whole checked state")
     func withLockMutatesWholeCheckedState() {
         let storage = ThreadSafeStorage(State(count: 2, items: ["a", "b"]))

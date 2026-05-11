@@ -101,7 +101,7 @@ public final class UncheckedThreadSafeStorage<State>: @unchecked Sendable {
 
 // MARK: - ThreadSafeStorageCore
 
-/// Shared storage core that keeps pointer-backed state alive while accessors yield under lock.
+/// Shared storage core that keeps pointer-backed state alive while modify accessors yield under lock.
 ///
 /// This private core owns the manually managed pointer for its full lifetime, and every pointee
 /// access happens only while `lock` is held, keeping the unchecked sendability assertion local.
@@ -140,9 +140,8 @@ private final class ThreadSafeStorageCore<State>: @unchecked Sendable {
 
     subscript<Member>(modifying keyPath: WritableKeyPath<State, Member>) -> Member {
         _read {
-            lock.lock()
-            defer { lock.unlock() }
-            yield pointer.pointee[keyPath: keyPath]
+            let value = read(keyPath)
+            yield value
         }
         _modify {
             lock.lock()
