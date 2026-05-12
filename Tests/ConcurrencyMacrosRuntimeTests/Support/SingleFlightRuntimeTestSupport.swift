@@ -6,6 +6,7 @@
 //
 
 import Testing
+@testable import ConcurrencyMacrosRuntime
 
 enum SingleFlightRuntimeTestSupport {
     enum ExpectedError: Error, Equatable {
@@ -82,6 +83,39 @@ enum SingleFlightRuntimeTestSupport {
 
         func firstLeaderStarted() -> Bool {
             didStartFirstLeader
+        }
+    }
+
+    final class HashProbe: Sendable {
+        private let didHashStorage = Mutex(false)
+
+        func markHashed() {
+            didHashStorage.mutate { didHash in
+                didHash = true
+            }
+        }
+
+        func didHash() -> Bool {
+            didHashStorage.value
+        }
+    }
+
+    struct InstrumentedKey: Hashable, Sendable {
+        let rawValue: String
+        let hashProbe: HashProbe?
+
+        init(_ rawValue: String, hashProbe: HashProbe? = nil) {
+            self.rawValue = rawValue
+            self.hashProbe = hashProbe
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hashProbe?.markHashed()
+            hasher.combine(rawValue)
+        }
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.rawValue == rhs.rawValue
         }
     }
 

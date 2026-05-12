@@ -7,8 +7,11 @@
 
 import ConcurrencyMacrosRuntime
 
-/// Expands on classes to synthesize a lock-backed internal state and lock helpers.
-@attached(member, names: named(_state), named(_State), named(inLock))
+/// Expands on classes to synthesize lock-backed state, property accessors, and lock helpers.
+///
+/// The owning class must explicitly conform to either checked `Sendable` or `@unchecked Sendable`.
+/// Checked `Sendable` classes must be `final`.
+@attached(member, names: named(_threadSafeStorage), named(_ThreadSafeState), named(inLock), arbitrary)
 @attached(memberAttribute)
 public macro ThreadSafe() = #externalMacro(
     module: "ConcurrencyMacrosImplementation",
@@ -17,7 +20,11 @@ public macro ThreadSafe() = #externalMacro(
 
 /// Rewrites initializer bodies so stored-property assignments populate synthesized lock state.
 @attached(body)
-public macro ThreadSafeInitializer(_ params: [String: Any]) = #externalMacro(
+public macro ThreadSafeInitializer(
+    storage: StaticString,
+    state: StaticString,
+    properties: [String: Any]
+) = #externalMacro(
   module: "ConcurrencyMacrosImplementation",
   type: "ThreadSafeInitializerMacro"
 )
@@ -27,6 +34,36 @@ public macro ThreadSafeInitializer(_ params: [String: Any]) = #externalMacro(
 public macro ThreadSafeProperty() = #externalMacro(
     module: "ConcurrencyMacrosImplementation",
     type: "ThreadSafePropertyMacro"
+)
+
+/// Marks mutable state that `@ThreadSafe` should intentionally leave unmanaged.
+///
+/// This marker emits no peers by itself. When consumed by `@ThreadSafe`, it
+/// requires the owning class to use `@unchecked Sendable`.
+@attached(peer)
+public macro ThreadSafeIgnored() = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "ThreadSafeIgnoredMacro"
+)
+
+/// Marks a synchronous `@ThreadSafe` instance method to be wrapped in the synthesized storage lock.
+///
+/// Tracked stored-property references in the method body are rewritten to the locked
+/// state for the duration of the method call. Keep wrapped bodies synchronous and
+/// direct: member calls are allowed only when rooted on tracked stored properties; closures,
+/// nested declarations, key paths, and helper calls are rejected because they can
+/// capture or re-enter lock-backed state.
+@attached(peer)
+public macro ThreadSafeMethod() = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "ThreadSafeMethodMacro"
+)
+
+/// Implementation detail attached by `@ThreadSafe` to apply the method-body rewrite.
+@attached(body)
+public macro _ThreadSafeMethod(properties: [String]) = #externalMacro(
+    module: "ConcurrencyMacrosImplementation",
+    type: "ThreadSafeMethodBodyMacro"
 )
 
 /// Deduplicates concurrent in-flight actor method work by key.

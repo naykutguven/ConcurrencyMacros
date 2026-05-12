@@ -191,9 +191,10 @@ struct ThrowingSingleFlightStoreTests {
         let store = ThrowingSingleFlightStore<Int>(defaultCancellationPolicy: .continueWhenNoWaiters)
         let probe = Support.CancellationProbeActor()
         let gate = Support.AsyncGateActor()
+        let lateJoinerKeyProbe = Support.HashProbe()
 
         let canceledWaiter = Task {
-            try await store.run(key: "shared") {
+            try await store.run(key: Support.InstrumentedKey("shared")) {
                 await probe.markStarted()
                 await probe.incrementExecutions()
                 await gate.wait()
@@ -207,13 +208,15 @@ struct ThrowingSingleFlightStoreTests {
         canceledWaiter.cancel()
 
         let lateJoiner = Task {
-            try await store.run(key: "shared") {
+            try await store.run(key: Support.InstrumentedKey("shared", hashProbe: lateJoinerKeyProbe)) {
                 await probe.incrementExecutions()
                 return 99
             }
         }
 
-        _ = try? await Task.sleep(for: .milliseconds(20))
+        await Support.waitUntil {
+            lateJoinerKeyProbe.didHash()
+        }
         await gate.open()
 
         let joinedValue = try await lateJoiner.value
@@ -241,6 +244,7 @@ struct ThrowingSingleFlightStoreTests {
         }
 
         await Support.waitUntil({ await probe.started() })
+        await Support.waitUntil({ await probe.executions() == 1 })
         canceledWaiter.cancel()
         await gate.open()
 
@@ -267,9 +271,10 @@ struct ThrowingSingleFlightStoreTests {
         for _ in 0..<20 {
             let iterationProbe = Support.IterationProbeActor()
             let gate = Support.AsyncGateActor()
+            let canceledWaiterKeyProbe = Support.HashProbe()
 
             let leader = Task {
-                try await store.run(key: "shared") {
+                try await store.run(key: Support.InstrumentedKey("shared")) {
                     await iterationProbe.markFirstLeaderStarted()
                     await gate.wait()
                     return 1
@@ -279,13 +284,15 @@ struct ThrowingSingleFlightStoreTests {
             await Support.waitUntil({ await iterationProbe.firstLeaderStarted() })
 
             let canceledWaiter = Task {
-                try await store.run(key: "shared") {
+                try await store.run(key: Support.InstrumentedKey("shared", hashProbe: canceledWaiterKeyProbe)) {
                     await probe.markUnexpectedLeaderExecution()
                     return 999
                 }
             }
 
-            _ = try? await Task.sleep(for: .milliseconds(20))
+            await Support.waitUntil {
+                canceledWaiterKeyProbe.didHash()
+            }
             canceledWaiter.cancel()
             await gate.open()
 

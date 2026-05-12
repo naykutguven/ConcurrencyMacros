@@ -333,14 +333,6 @@ private extension SingleFlightClassMacro {
             )
         }
 
-        if keyExpression.as(StringLiteralExprSyntax.self) != nil {
-            throw DiagnosticsError(
-                syntax: keyExpression,
-                id: "legacyStringKey",
-                message: "String literal keys are unsupported. Use an expression, for example 'key: { (id: User.ID) in id }'."
-            )
-        }
-
         return ParsedArguments(
             keyExpression: keyExpression,
             usingExpression: usingExpression,
@@ -418,14 +410,6 @@ private extension SingleFlightClassMacro {
     }
 
     static func validatedUsingExpression(_ usingExpression: ExprSyntax) throws -> ExprSyntax {
-        if usingExpression.as(StringLiteralExprSyntax.self) != nil {
-            throw DiagnosticsError(
-                syntax: usingExpression,
-                id: "legacyStringUsing",
-                message: "String literal stores are unsupported. Use an expression, for example 'using: sharedFlightsStore'."
-            )
-        }
-
         if usingExpression.as(KeyPathExprSyntax.self) != nil {
             throw DiagnosticsError(
                 syntax: usingExpression,

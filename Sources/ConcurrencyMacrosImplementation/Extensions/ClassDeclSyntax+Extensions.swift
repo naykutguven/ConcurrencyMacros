@@ -6,111 +6,75 @@
 //
 
 import Foundation
-import SwiftCompilerPlugin
 import SwiftDiagnostics
 import SwiftSyntax
-import SwiftSyntaxBuilder
-import SwiftSyntaxMacros
-import RegexBuilder
 
 /// Utilities for extracting macro-relevant stored-property metadata from class declarations.
 extension ClassDeclSyntax {
-    private static var trailingCallSuffixRegex: Regex<Substring> {
-        Regex {
-            "("
-            ZeroOrMore {
-                CharacterClass.anyOf(")").inverted
-            }
-            ")"
-            Anchor.endOfLine
-        }
-    }
-
-    private static var integerLiteralRegex: Regex<Substring> {
-        Regex {
-            Anchor.startOfLine
-            Optionally { "-" }
-            OneOrMore(.digit)
-            Anchor.endOfLine
-        }
-    }
-
-    private static var doubleLiteralRegex: Regex<Substring> {
-        Regex {
-            Anchor.startOfLine
-            Optionally { "-" }
-            OneOrMore(.digit)
-            Optionally { "." }
-            ZeroOrMore(.digit)
-            Anchor.endOfLine
-        }
-    }
-
-    private static var quotedStringRegex: Regex<Substring> {
-        Regex {
-            Anchor.startOfLine
-            "\""
-            ZeroOrMore {
-                CharacterClass.anyOf("\n").inverted
-            }
-            "\""
-            Anchor.endOfLine
-        }
-    }
-
-    /// Returns the list of mutable stored properties in the class.
-    var storedVariables: [(name: String, type: String, defaultValue: String?)] {
-        var storedVars = [(String, String, String?)]()
+    /// Returns mutable stored properties tracked by `@ThreadSafe`.
+    func threadSafeStoredProperties() throws -> [ThreadSafeStoredProperty] {
+        var storedProperties = [ThreadSafeStoredProperty]()
 
         for member in memberBlock.members {
-            guard
-                let varDecl = member.decl.as(VariableDeclSyntax.self),
-                varDecl.isMutable
-            else { continue }
+            guard let varDecl = member.decl.as(VariableDeclSyntax.self) else {
+                continue
+            }
 
-            for binding in varDecl.bindings {
-                if
-                    binding.accessorBlock == nil,
-                    let pattern = binding.pattern.as(IdentifierPatternSyntax.self)
-                {
-                    let name = pattern.identifier.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let defaultValue = binding.initializer?.value.trimmedDescription
-                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? binding
-                        .typeAnnotation?.type.defaultValueForOptional
-
-                    if let typeAnnotation = binding.typeAnnotation {
-                        let type = typeAnnotation.type.trimmedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-                        storedVars.append((name, type, defaultValue))
-                    } else if let defaultValue {
-                        // Heuristically tries to infer the type from the default value
-                        let value = stripTrailingCallSuffix(from: defaultValue)
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                        let type: String =
-                        if value == "true" || value == "false" {
-                            "Bool"
-                        } else if value.wholeMatch(of: Self.integerLiteralRegex) != nil {
-                            "Int"
-                        } else if value.wholeMatch(of: Self.doubleLiteralRegex) != nil {
-                            "Double"
-                        } else if value.wholeMatch(of: Self.quotedStringRegex) != nil {
-                            "String"
-                        } else {
-                            value
-                        }
-                        storedVars.append((name, type, defaultValue))
-                    }
-                }
+            switch try varDecl.threadSafeStoredProperty() {
+            case .ignored, .intentionallyIgnored:
+                continue
+            case .tracked(let property):
+                storedProperties.append(property)
             }
         }
-        return storedVars
+
+        return storedProperties
     }
 
-    private func stripTrailingCallSuffix(from value: String) -> String {
-        guard let match = value.firstMatch(of: Self.trailingCallSuffixRegex) else {
-            return value
+    /// Returns the sendability mode selected by the class declaration.
+    func threadSafeMode() throws -> ThreadSafeMode {
+        switch explicitSendableConformanceKind {
+        case .checked:
+            guard isFinalDeclaration else {
+                throw DiagnosticsError(
+                    threadSafe: self,
+                    id: "finalClassRequired",
+                    message: "@ThreadSafe checked Sendable classes must be 'final'; mark the class 'final' or use '@unchecked Sendable' if subclass state is intentionally outside macro checking."
+                )
+            }
+            return .checked
+        case .unchecked:
+            return .unchecked
+        case .none:
+            throw DiagnosticsError(
+                threadSafe: self,
+                id: "sendableConformanceRequired",
+                message: "@ThreadSafe requires the class to explicitly conform to 'Sendable' or '@unchecked Sendable'."
+            )
         }
-        return String(value[..<match.range.lowerBound])
+    }
+
+    /// Indicates whether the class declaration carries `@ThreadSafe`.
+    var hasThreadSafeAttribute: Bool {
+        attributes.contains { element in
+            guard let attribute = element.as(AttributeSyntax.self) else {
+                return false
+            }
+            let name = attribute.attributeName.trimmedDescription.replacingOccurrences(of: " ", with: "")
+            return name == "ThreadSafe" || name.hasSuffix(".ThreadSafe")
+        }
+    }
+
+    /// Returns true when the class contains mutable state marked with `@ThreadSafeIgnored`.
+    var hasThreadSafeIgnoredMutableState: Bool {
+        memberBlock.members.contains { member in
+            guard let variable = member.decl.as(VariableDeclSyntax.self),
+                  variable.bindingSpecifier.text == "var"
+            else {
+                return false
+            }
+            return variable.hasThreadSafeIgnoredAttribute
+        }
     }
 
     /// Indicates whether the class declaration is explicitly `final`.
@@ -130,7 +94,7 @@ extension ClassDeclSyntax {
         explicitSendableConformanceKind == .unchecked
     }
 
-    private var explicitSendableConformanceKind: SendableConformanceKind {
+    var explicitSendableConformanceKind: SendableConformanceKind {
         guard let inheritedTypes = inheritanceClause?.inheritedTypes else {
             return .none
         }
@@ -153,7 +117,7 @@ extension ClassDeclSyntax {
         return hasCheckedSendable ? .checked : .none
     }
 
-    private enum SendableConformanceKind {
+    enum SendableConformanceKind {
         case none
         case checked
         case unchecked

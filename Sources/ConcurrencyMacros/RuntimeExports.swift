@@ -10,10 +10,16 @@ import ConcurrencyMacrosRuntime
 /// Keeps macro consumers on a single `import ConcurrencyMacros` by surfacing
 /// only the runtime symbols referenced by macro-generated code.
 
-/// Backward-compatible alias used by macro-generated code in client modules.
-public typealias Mutex<Value: Sendable> = ConcurrencyMacrosRuntime.Mutex<Value>
+/// Checked storage used by generated `@ThreadSafe` classes.
+public typealias ThreadSafeStorage<State: Sendable> = ConcurrencyMacrosRuntime.ThreadSafeStorage<State>
 
-/// Backward-compatible alias used by macro-generated initializer metadata.
+/// Unchecked storage used by generated `@ThreadSafe` classes whose owners explicitly use `@unchecked Sendable`.
+public typealias UncheckedThreadSafeStorage<State> = ConcurrencyMacrosRuntime.UncheckedThreadSafeStorage<State>
+
+/// Compile-time helper used by generated `@ThreadSafe` code to require checked property sendability.
+public typealias ThreadSafeSendabilityCheck<Value: Sendable> = ConcurrencyMacrosRuntime.ThreadSafeSendabilityCheck<Value>
+
+/// Type-erased initializer metadata used by generated `@ThreadSafe` helper macros.
 public typealias TypeErased<T> = ConcurrencyMacrosRuntime.TypeErased<T>
 
 /// Namespace for runtime helpers referenced by freestanding macro expansions.

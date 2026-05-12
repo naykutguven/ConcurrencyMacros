@@ -86,16 +86,15 @@ final class SessionStore: Sendable {
     var sessionsByID: [String: Session] = [:]
     var activeUserID: String?
 
-    func upsert(_ session: Session) {
+    func activate(_ session: Session) {
         inLock { state in
             state.sessionsByID[session.id] = session
+            state.activeUserID = session.userID
         }
     }
 
     func session(id: String) -> Session? {
-        inLock { state in
-            state.sessionsByID[id]
-        }
+        sessionsByID[id]
     }
 }
 ```
@@ -278,6 +277,8 @@ The macro handles bounded fan-out, cancellation on failure, and stable output or
 | `@ThreadSafe` | Attached (`member`, `memberAttribute`) | Synthesizes lock-backed state and rewrites mutable stored properties | Class declarations |
 | `@ThreadSafeInitializer` | Attached (`body`) | Helper rewrite for initializer assignment staging | Initializers (helper/support) |
 | `@ThreadSafeProperty` | Attached (`accessor`) | Helper rewrite for lock-backed property accessors | Mutable stored properties (helper/support) |
+| `@ThreadSafeIgnored` | Attached (`peer`) | Marks intentionally unmanaged mutable state for unchecked owners | Mutable stored properties (helper/support) |
+| `@ThreadSafeMethod` | Attached (`peer`) | Marks conservative synchronous method bodies for generated state-lock wrapping | Instance methods in nominal `@ThreadSafe` classes |
 | `@SingleFlightActor` | Attached (`body`, `peer`) | Deduplicates in-flight actor method work by key | Actor instance methods |
 | `@SingleFlightClass` | Attached (`body`, `peer`) | Deduplicates in-flight class method work by key | `final` class instance methods |
 | `@StreamBridge` | Attached (`body`, `peer`) | Generates `AsyncStream` / `AsyncThrowingStream` wrappers from callback registration methods | Actor/class instance methods |
@@ -298,15 +299,113 @@ Manual lock storage, private state containers, and repeated lock accessors for m
 
 ### Use when
 
-Use it for synchronous shared mutable state in `final` classes where callers need normal property or method APIs backed by consistent locking.
+Use it for synchronous shared mutable state in class APIs where callers need normal property or method access backed by consistent locking. Prefer checked `Sendable` with `final` classes. Use `@unchecked Sendable` only when intentionally unmanaged or independently synchronized state sits outside the checked model.
+
+### Example
+
+```swift
+import ConcurrencyMacros
+
+@ThreadSafe
+final class Counter: Sendable {
+    var count = 0
+    var events: [String] = []
+}
+
+let counter = Counter()
+counter.count += 1
+counter.events.append("started")
+```
+
+Single-property compound mutations such as `count += 1` and `events.append(...)` are atomic for that property.
+
+### Common patterns
+
+Use `inLock` when multiple properties must change as one invariant:
+
+```swift
+@ThreadSafe
+final class SessionStore: Sendable {
+    var sessionsByID: [String: Session] = [:]
+    var activeUserID: String?
+
+    func activate(_ session: Session) {
+        inLock { state in
+            state.sessionsByID[session.id] = session
+            state.activeUserID = session.userID
+        }
+    }
+}
+```
+
+Use `@ThreadSafeMethod` for small synchronous methods that should run under the generated lock:
+
+```swift
+@ThreadSafe
+final class QueueStore: Sendable {
+    var queue: [String] = []
+
+    @ThreadSafeMethod
+    func enqueue(_ value: String) {
+        queue.append(value)
+    }
+
+    @ThreadSafeMethod
+    func pop() -> String? {
+        guard !queue.isEmpty else { return nil }
+        return queue.removeFirst()
+    }
+}
+```
+
+Use `@ThreadSafeIgnored` only with explicit `@unchecked Sendable` when the ignored state is intentionally outside macro management:
+
+```swift
+import ConcurrencyMacros
+import Foundation
+
+@ThreadSafe
+final class ImageCache: @unchecked Sendable {
+    var hitCount = 0
+
+    // NSCache provides its own synchronization; @ThreadSafe leaves it unmanaged.
+    @ThreadSafeIgnored
+    private var cache = NSCache<NSString, NSData>()
+
+    func data(for key: String) -> NSData? {
+        hitCount += 1
+        return cache.object(forKey: key as NSString)
+    }
+}
+```
+
+Designated initializers may assign required tracked properties with plain top-level assignments before storage is initialized:
+
+```swift
+@ThreadSafe
+final class UserSession: Sendable {
+    var userID: String
+    var token: String?
+
+    init(userID: String) {
+        self.userID = userID
+    }
+}
+```
 
 ### Safety notes
 
 - Intended for class declarations.
+- The class must explicitly conform to `Sendable` or `@unchecked Sendable`.
+- Checked `Sendable` classes must be `final`.
 - When a class has no initializer, each mutable stored property must have a default value.
 - Rewriting applies to mutable stored properties and designated initializers; convenience initializers are not rewritten.
-- Use generated `inLock` for multi-property or read-modify-write operations that must be atomic.
-- The generated state container is lock-backed and `Sendable`.
+- Single-property compound mutations such as `count += 1` and `items.append(value)` run under the generated storage lock for that property.
+- Use generated `inLock` for multi-property invariants.
+- The generated lock is non-recursive; code running under `inLock`, `@ThreadSafeMethod`, or a locked compound mutation must not call back into the same `@ThreadSafe` instance.
+- `@ThreadSafeIgnored` marks intentionally unmanaged mutable state and requires the owning class to conform as `@unchecked Sendable`.
+- `@ThreadSafeMethod` can lock simple synchronous methods, but only member calls rooted on tracked stored properties are allowed inside the wrapped body. Use `inLock` for more complex method bodies.
+- Normal app and SDK code should not write `@ThreadSafeInitializer`, `@ThreadSafeProperty`, or underscored implementation helpers; `@ThreadSafe` attaches them automatically.
 
 ## `@SingleFlightActor`
 
@@ -501,10 +600,12 @@ Use it for uploads, invalidations, notifications, and other async side-effect wo
 
 ## Support Macros
 
-These macros are intentionally documented as support/helper APIs and are typically used by higher-level macros or infrastructure setup:
+These helper macros support higher-level features and infrastructure setup:
 
-- `@ThreadSafeInitializer`: internal initializer-body rewrite helper used by `@ThreadSafe`.
-- `@ThreadSafeProperty`: internal accessor rewrite helper used by `@ThreadSafe`.
+- `@ThreadSafeIgnored`: user-facing marker for intentionally unmanaged state in `@unchecked Sendable` `@ThreadSafe` classes.
+- `@ThreadSafeMethod`: user-facing marker for conservative synchronous `@ThreadSafe` method bodies that should run under the generated lock.
+- `@ThreadSafeInitializer`: internal initializer-body rewrite helper attached automatically by `@ThreadSafe`.
+- `@ThreadSafeProperty`: internal accessor rewrite helper attached automatically by `@ThreadSafe`.
 - `@StreamBridgeDefaults`: declares per-type defaults for `@StreamBridge` (`cancel`, `buffering`, `safety`).
 - `@StreamToken`: synthesizes `StreamBridgeTokenCancellable` conformance by mapping a token cancel method.
 

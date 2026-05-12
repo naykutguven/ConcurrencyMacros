@@ -11,7 +11,7 @@ import Testing
 @Suite("ConcurrencyMacros")
 struct ConcurrencyMacrosTests {
     @ThreadSafe
-    private final class Counter {
+    private final class Counter: Sendable {
         var count: Int
         var label: String = "seed"
 
@@ -40,6 +40,30 @@ struct ConcurrencyMacrosTests {
         }
     }
 
+    @ThreadSafe
+    private final class UncheckedIgnoredThreadSafeStore: @unchecked Sendable {
+        @ThreadSafeIgnored var unmanaged = NonSendableOperationState(value: 1)
+        var count: Int = 0
+    }
+
+    @ThreadSafe
+    private final class MethodCounter: Sendable {
+        var count: Int = 0
+
+        @ThreadSafeMethod
+        func incrementFromSnapshot() -> Int {
+            let next = count + 1
+            count = next
+            return count
+        }
+    }
+
+    @ThreadSafe
+    private final class AtomicPropertyStore: Sendable {
+        var count: Int = 0
+        var items: [Int] = []
+    }
+
     @Test("ThreadSafe compiles with a single import")
     func threadSafeCompilesWithSingleImport() {
         let counter = Counter(count: 1)
@@ -51,6 +75,66 @@ struct ConcurrencyMacrosTests {
 
         #expect(counter.count == 2)
         #expect(counter.label == "next")
+    }
+
+    @Test("ThreadSafe unchecked mode allows ignored mutable state end-to-end")
+    func threadSafeUncheckedModeAllowsIgnoredMutableStateEndToEnd() {
+        let store = UncheckedIgnoredThreadSafeStore()
+
+        store.count = 2
+        store.unmanaged.value += 1
+
+        #expect(store.count == 2)
+        #expect(store.unmanaged.value == 2)
+    }
+
+    @Test("ThreadSafeMethod locks a synchronous method end-to-end")
+    func threadSafeMethodLocksSynchronousMethodEndToEnd() async {
+        let counter = MethodCounter()
+        let iterations = 1_000
+
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<iterations {
+                group.addTask {
+                    _ = counter.incrementFromSnapshot()
+                }
+            }
+        }
+
+        #expect(counter.count == iterations)
+    }
+
+    @Test("ThreadSafe compound integer mutation is atomic")
+    func threadSafeCompoundIntegerMutationIsAtomic() async {
+        let store = AtomicPropertyStore()
+        let iterations = 1_000
+
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<iterations {
+                group.addTask {
+                    store.count += 1
+                }
+            }
+        }
+
+        #expect(store.count == iterations)
+    }
+
+    @Test("ThreadSafe array append is atomic for one property")
+    func threadSafeArrayAppendIsAtomicForOneProperty() async {
+        let store = AtomicPropertyStore()
+        let iterations = 1_000
+
+        await withTaskGroup(of: Void.self) { group in
+            for value in 0..<iterations {
+                group.addTask {
+                    store.items.append(value)
+                }
+            }
+        }
+
+        #expect(store.items.count == iterations)
+        #expect(store.items.sorted() == Array(0..<iterations))
     }
 
     @Test("withTimeout compiles with a single import and returns result")
@@ -461,11 +545,13 @@ struct ConcurrencyMacrosTests {
 
 private enum NamespaceCollisionFixtures {
     enum ConcurrencyRuntime {}
-    enum Mutex<Value: Sendable> {}
+    enum ThreadSafeSendabilityCheck<Value: Sendable> {}
+    enum ThreadSafeStorage<State: Sendable> {}
     enum TypeErased<Value> {}
+    enum UncheckedThreadSafeStorage<State> {}
 
     @ThreadSafe
-    final class InitializedCounter {
+    final class InitializedCounter: Sendable {
         var count: Int
         var label = "seed"
 
@@ -475,7 +561,7 @@ private enum NamespaceCollisionFixtures {
     }
 
     @ThreadSafe
-    final class DefaultedCounter {
+    final class DefaultedCounter: Sendable {
         var count: Int = 0
     }
 
@@ -710,10 +796,15 @@ private enum BridgeFailure: Error, Equatable, Sendable {
     case disconnected
 }
 
+@ThreadSafe
+private final class CancellationCounter: Sendable {
+    var count: Int = 0
+}
+
 @StreamBridgeDefaults(cancel: .tokenMethod, buffering: .bufferingNewest(1))
 private final class PriceTicker: Sendable {
     private let value: Int
-    private let cancelCount = Mutex(0)
+    private let cancelCount = CancellationCounter()
 
     init(value: Int) {
         self.value = value
@@ -727,20 +818,18 @@ private final class PriceTicker: Sendable {
         _ = symbol
         handler(value)
         return BridgeObservationToken {
-            self.cancelCount.mutate { count in
-                count += 1
-            }
+            self.cancelCount.count += 1
         }
     }
 
     func cancelledCount() -> Int {
-        cancelCount.value
+        cancelCount.count
     }
 }
 
 @StreamBridgeDefaults(cancel: .tokenMethod, buffering: .bufferingNewest(1))
 private final class SocketBridge: Sendable {
-    private let cancelCount = Mutex(0)
+    private let cancelCount = CancellationCounter()
 
     @StreamBridge(
         as: "messageStream",
@@ -757,13 +846,11 @@ private final class SocketBridge: Sendable {
         onError(.disconnected)
         onClose()
         return BridgeObservationToken {
-            self.cancelCount.mutate { count in
-                count += 1
-            }
+            self.cancelCount.count += 1
         }
     }
 
     func cancelledCount() -> Int {
-        cancelCount.value
+        cancelCount.count
     }
 }
